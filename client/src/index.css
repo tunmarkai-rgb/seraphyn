@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+
+:root {
+  --sky-blue: #7EB5C8;
+  --soft-blue: #B8D8E4;
+  --warm-white: #F5F5F0;
+  --pure-white: #FFFFFF;
+  --warm-gold: #C8A96E;
+  --deep-navy: #2C3E50;
+  --text-muted: #5A6B7A;
+  --border: rgba(44,62,80,0.12);
+  --charcoal: #1C1C1C;
+  --success: #2D7A4F;
+
+  /* Map to our variable names so existing code still works */
+  --cream: #F5F5F0;
+  --deep-teal: #2C3E50;
+  --teal: #7EB5C8;
+  --teal-mid: #B8D8E4;
+  --gold: #C8A96E;
+  --gold-light: #D4BC8A;
+  --white: #FFFFFF;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--cream);
+  color: var(--charcoal);
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+
+input, select, textarea {
+  font-family: 'DM Sans', sans-serif;
+}
+
+@media (max-width: 768px) {
+  .auth-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 768px) {
+
+  .auth-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hiw-grid {
+    grid-template-columns: 1fr !important;
+    gap: 48px !important;
+  }
+
+  .cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .footer-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 32px !important;
+  }
+
+  .nav-links-desktop {
+    display: none !important;
+  }
+
+  /* Stats bar — 2 columns on mobile */
+  .stats-mobile {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .footer-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+}
