@@ -110,3 +110,60 @@ input, select, textarea {
     display: flex !important;
   }
 }
+
+/* ── DASHBOARD / PORTAL LAYOUTS ── */
+@media (max-width: 768px) {
+  .dash-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .jobs-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Admin sidebar collapses on mobile */
+  .admin-sidebar {
+    transform: translateX(-100%) !important;
+  }
+
+  .admin-sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  .admin-main {
+    margin-left: 0 !important;
+  }
+
+  .admin-menu-btn {
+    display: flex !important;
+  }
+
+  /* Messages sidebar */
+  .msg-sidebar {
+    width: 100% !important;
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── TABLE SCROLL ON MOBILE ── */
+@media (max-width: 900px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}

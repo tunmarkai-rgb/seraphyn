@@ -1,0 +1,287 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import Navbar from '../../components/Navbar'
+
+const ORG_TYPES = [
+  'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
+  'Home Health Agency', 'Rehabilitation Center', 'Surgical Center',
+  'Behavioral Health', 'School Health', 'Other'
+]
+
+const US_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY'
+]
+
+export default function EmployerOnboarding() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [empProfile, setEmpProfile] = useState(null)
+  const [stage, setStage] = useState(1)
+  const [form, setForm] = useState({
+    org_name: '', org_type: '', contact_name: '', contact_title: '',
+    city: '', state: '', bed_count: '', description: ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (user) loadProfile()
+  }, [user])
+
+  async function loadProfile() {
+    const { data } = await supabase
+      .from('employer_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+    if (data) {
+      setEmpProfile(data)
+      setStage(data.onboarding_stage || 1)
+      setForm({
+        org_name: data.org_name || '',
+        org_type: data.org_type || '',
+        contact_name: data.contact_name || '',
+        contact_title: data.contact_title || '',
+        city: data.city || '',
+        state: data.state || '',
+        bed_count: data.bed_count || '',
+        description: data.description || ''
+      })
+    }
+  }
+
+  function handle(e) {
+    setForm({ ...form, [e.target.name]: e.target.value })
+  }
+
+  async function submitStage1(e) {
+    e.preventDefault()
+    setError('')
+    setSaving(true)
+    try {
+      const { error: err } = await supabase
+        .from('employer_profiles')
+        .update({
+          ...form,
+          bed_count: form.bed_count ? parseInt(form.bed_count) : null,
+          onboarding_stage: 2,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id)
+      if (err) throw err
+      setStage(2)
+      loadProfile()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '11px 14px',
+    background: 'var(--warm-white)', border: '1px solid var(--border)',
+    borderRadius: '2px', fontSize: '14px', color: 'var(--deep-navy)',
+    outline: 'none', fontFamily: 'DM Sans, sans-serif'
+  }
+  const labelStyle = {
+    display: 'block', fontSize: '11px', letterSpacing: '0.1em',
+    textTransform: 'uppercase', color: 'var(--text-muted)',
+    fontWeight: '500', marginBottom: '6px'
+  }
+
+  const steps = [
+    { num: 1, label: 'Organization Profile' },
+    { num: 2, label: 'Sign Agreement' },
+    { num: 3, label: 'Pending Approval' },
+  ]
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--warm-white)', fontFamily: 'DM Sans, sans-serif' }}>
+      <Navbar />
+      <div style={{ maxWidth: '720px', margin: '0 auto', padding: '100px 24px 60px' }}>
+
+        <div style={{ marginBottom: '40px' }}>
+          <p style={{ fontSize: '11px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '8px' }}>Employer Portal</p>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: '300', color: 'var(--deep-navy)' }}>
+            Account Setup
+          </h1>
+          <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>
+            Complete these three steps to start posting jobs and connecting with nurses.
+          </p>
+        </div>
+
+        {/* Step indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '40px' }}>
+          {steps.map((s, i) => (
+            <div key={s.num} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: '14px', fontWeight: '500', flexShrink: 0,
+                  background: stage > s.num ? 'var(--success)' : stage === s.num ? 'var(--deep-navy)' : 'transparent',
+                  color: stage >= s.num ? 'white' : 'var(--text-muted)',
+                  border: stage < s.num ? '1px solid var(--border)' : 'none'
+                }}>
+                  {stage > s.num ? '✓' : s.num}
+                </div>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: stage >= s.num ? 'var(--deep-navy)' : 'var(--text-muted)', fontWeight: stage === s.num ? '500' : '400', whiteSpace: 'nowrap' }}>
+                  {s.label}
+                </span>
+              </div>
+              {i < steps.length - 1 && (
+                <div style={{ flex: 1, height: '1px', background: stage > s.num ? 'var(--success)' : 'var(--border)', margin: '0 12px', marginBottom: '22px' }} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div style={{ background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '2px', padding: '12px 16px', marginBottom: '24px', fontSize: '13px', color: '#B43C3C' }}>
+            {error}
+          </div>
+        )}
+
+        {/* ── STAGE 1: Org Profile ── */}
+        {stage === 1 && (
+          <form onSubmit={submitStage1}>
+            <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '32px' }}>
+              <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+                Tell us about your organization
+              </h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Organization Name *</label>
+                  <input name="org_name" value={form.org_name} onChange={handle} required style={inputStyle} placeholder="St. Mary's Medical Center" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Organization Type *</label>
+                  <select name="org_type" value={form.org_type} onChange={handle} required style={inputStyle}>
+                    <option value="">Select type...</option>
+                    {ORG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Contact Name *</label>
+                    <input name="contact_name" value={form.contact_name} onChange={handle} required style={inputStyle} placeholder="Jane Smith" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Contact Title</label>
+                    <input name="contact_title" value={form.contact_title} onChange={handle} style={inputStyle} placeholder="Chief Nursing Officer" />
+                  </div>
+                </div>
+                <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>City *</label>
+                    <input name="city" value={form.city} onChange={handle} required style={inputStyle} placeholder="Chicago" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>State *</label>
+                    <select name="state" value={form.state} onChange={handle} required style={inputStyle}>
+                      <option value="">Select...</option>
+                      {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Number of Beds</label>
+                  <input name="bed_count" type="number" min="1" value={form.bed_count} onChange={handle} style={inputStyle} placeholder="e.g. 250" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Description</label>
+                  <textarea name="description" value={form.description} onChange={handle} rows={3} placeholder="Brief overview of your organization..." style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button type="submit" disabled={saving}
+                style={{ padding: '12px 32px', background: saving ? 'var(--text-muted)' : 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                {saving ? 'Saving...' : 'Save & Continue →'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── STAGE 2: Sign Contract ── */}
+        {stage === 2 && (
+          <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '40px', textAlign: 'center' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(200,169,110,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '28px' }}>
+              ✉️
+            </div>
+            <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '26px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '12px' }}>
+              Sign Your Staffing Agreement
+            </h2>
+            <p style={{ fontSize: '14px', color: 'var(--text-muted)', maxWidth: '460px', margin: '0 auto 24px', lineHeight: '1.7' }}>
+              A staffing agreement has been sent to <strong>{user?.email}</strong> via DocuSeal. Please open the email and complete the e-signature to proceed.
+            </p>
+            <div style={{ background: 'var(--warm-white)', borderRadius: '4px', padding: '20px', maxWidth: '400px', margin: '0 auto 28px' }}>
+              {empProfile?.contract_signed ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '20px' }}>✅</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--success)' }}>Agreement Signed</p>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Signed on {empProfile.contract_signed_at ? new Date(empProfile.contract_signed_at).toLocaleDateString() : '—'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '20px' }}>⏳</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--warm-gold)' }}>Awaiting Your Signature</p>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Check your email for the signing link</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              Can't find the email? Check your spam folder or contact{' '}
+              <a href="mailto:support@seraphyncare.com" style={{ color: 'var(--sky-blue)' }}>support@seraphyncare.com</a>
+            </p>
+            {empProfile?.contract_signed && (
+              <div style={{ background: 'rgba(45,122,79,0.08)', border: '1px solid rgba(45,122,79,0.25)', borderRadius: '4px', padding: '16px' }}>
+                <p style={{ fontSize: '13px', color: 'var(--success)' }}>
+                  ✓ Contract signed. Our team is reviewing your account. You'll receive an email once approved.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STAGE 3: Pending Approval ── */}
+        {stage === 3 && (
+          <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '40px', textAlign: 'center' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(45,122,79,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '28px' }}>
+              🎉
+            </div>
+            <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '26px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '12px' }}>
+              {empProfile?.approved_at ? 'Account Approved!' : 'Pending Final Approval'}
+            </h2>
+            {empProfile?.approved_at ? (
+              <>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto 28px', lineHeight: '1.7' }}>
+                  Your account is fully approved. You can now post jobs, browse nurse profiles, and start hiring.
+                </p>
+                <button onClick={() => navigate('/employer/dashboard')}
+                  style={{ padding: '12px 32px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                  Go to Dashboard →
+                </button>
+              </>
+            ) : (
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto', lineHeight: '1.7' }}>
+                Your signed agreement is under review by our team. This typically takes 1–2 business days. You'll receive an email confirmation once approved.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
