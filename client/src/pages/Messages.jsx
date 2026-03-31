@@ -11,7 +11,15 @@ export default function Messages() {
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState('threads')
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
   const bottomRef = useRef(null)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     if (user) loadThreads()
@@ -37,8 +45,8 @@ export default function Messages() {
         applications(
           id, status,
           jobs(title, city, state),
-          nurse_profiles(first_name, last_name),
-          employer_profiles(org_name)
+          nurse_profiles(first_name, last_name, user_id),
+          employer_profiles(org_name, user_id)
         )
       `)
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
@@ -117,7 +125,7 @@ export default function Messages() {
         <div style={{ display: 'flex', height: 'calc(100vh - 110px)', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
 
           {/* Thread list */}
-          <div style={{ width: '300px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0 }} className="msg-sidebar">
+          <div style={{ width: isMobile ? '100%' : '300px', borderRight: isMobile ? 'none' : '1px solid var(--border)', display: isMobile && activeView !== 'threads' ? 'none' : 'flex', flexDirection: 'column', flexShrink: 0 }} className="msg-sidebar">
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)' }}>Messages</h2>
             </div>
@@ -132,7 +140,7 @@ export default function Messages() {
                 threads.map(thread => {
                   const active = selectedThread?.application_id === thread.application_id
                   return (
-                    <button key={thread.application_id} onClick={() => setSelectedThread(thread)}
+                    <button key={thread.application_id} onClick={() => { setSelectedThread(thread); if (isMobile) setActiveView('conversation') }}
                       style={{ width: '100%', padding: '16px 20px', border: 'none', textAlign: 'left', cursor: 'pointer', background: active ? 'rgba(126,181,200,0.1)' : 'transparent', borderBottom: '1px solid var(--border)', borderLeft: active ? '3px solid var(--sky-blue)' : '3px solid transparent', transition: 'all 0.15s' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                         <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: active ? 'var(--sky-blue)' : 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', fontFamily: 'Cormorant Garamond, serif', flexShrink: 0 }}>
@@ -155,7 +163,7 @@ export default function Messages() {
           </div>
 
           {/* Message area */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ flex: 1, display: isMobile && activeView !== 'conversation' ? 'none' : 'flex', flexDirection: 'column', minWidth: 0 }}>
             {!selectedThread ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ textAlign: 'center' }}>
@@ -167,6 +175,9 @@ export default function Messages() {
               <>
                 {/* Thread header */}
                 <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {isMobile && (
+                    <button onClick={() => setActiveView('threads')} style={{ background: 'none', border: 'none', color: 'var(--sky-blue)', fontSize: '20px', cursor: 'pointer', padding: '0', lineHeight: 1, flexShrink: 0 }}>‹</button>
+                  )}
                   <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: 'Cormorant Garamond, serif', fontSize: '16px' }}>
                     {getThreadName(selectedThread)[0]}
                   </div>

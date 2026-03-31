@@ -8,7 +8,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'var(--deep-teal)',
+        background: 'var(--deep-navy)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center'
@@ -16,7 +16,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
         <div style={{ textAlign: 'center' }}>
           <div style={{
             fontSize: '32px',
-            color: 'var(--gold)',
+            color: 'var(--warm-gold)',
             marginBottom: '16px'
           }}>✦</div>
           <p style={{ color: 'rgba(245,240,232,0.6)', fontSize: '13px', letterSpacing: '0.1em' }}>

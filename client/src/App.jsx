@@ -9,6 +9,7 @@ import NurseSignup from './pages/NurseSignup'
 import EmployerSignup from './pages/EmployerSignup'
 import Jobs from './pages/Jobs'
 import Nurses from './pages/Nurses'
+import NurseDetail from './pages/NurseDetail'
 
 // Nurse portal
 import NurseDashboard from './pages/nurse/Dashboard'
@@ -43,6 +44,7 @@ function App() {
         <Route path="/employer-signup" element={<EmployerSignup />} />
         <Route path="/jobs"           element={<Jobs />} />
         <Route path="/nurses"         element={<Nurses />} />
+        <Route path="/nurses/:id"     element={<NurseDetail />} />
 
         {/* Nurse portal */}
         <Route path="/nurse/dashboard" element={

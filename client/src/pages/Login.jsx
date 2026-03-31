@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import Navbar from '../components/Navbar'
 
 export default function Login() {
@@ -22,8 +23,13 @@ export default function Login() {
     try {
       const { data, error } = await signIn(form.email, form.password)
       if (error) throw error
-      // Redirect based on role
-      const role = data.user?.user_metadata?.role
+      // Redirect based on role from public.users table (not user_metadata)
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      const role = userRow?.role
       if (role === 'nurse') navigate('/nurse/dashboard')
       else if (role === 'employer') navigate('/employer/dashboard')
       else if (role === 'admin') navigate('/admin')
@@ -47,8 +53,8 @@ export default function Login() {
       <div style={{ width: '100%', maxWidth: '440px' }}>
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', marginBottom: '32px', textDecoration: 'none' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--deep-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', fontSize: '18px' }}>✦</div>
-            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', color: 'var(--deep-teal)' }}>Seraphyn</span>
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warm-gold)', fontSize: '18px' }}>✦</div>
+            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', color: 'var(--deep-navy)' }}>Seraphyn</span>
           </Link>
 
           {justSignedUp && (
@@ -61,7 +67,7 @@ export default function Login() {
             </div>
           )}
 
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '36px', color: 'var(--deep-teal)', marginBottom: '8px' }}>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '36px', color: 'var(--deep-navy)', marginBottom: '8px' }}>
             Welcome back
           </h1>
           <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Sign in to your Seraphyn account</p>
@@ -86,7 +92,7 @@ export default function Login() {
             ))}
 
             <button type="submit" disabled={loading} style={{
-              width: '100%', padding: '13px', background: loading ? 'var(--teal)' : 'var(--deep-teal)',
+              width: '100%', padding: '13px', background: loading ? 'var(--teal)' : 'var(--deep-navy)',
               color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px',
               letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500',
               cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '20px'

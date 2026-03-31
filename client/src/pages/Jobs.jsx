@@ -3,20 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
-
-const SPECIALTIES = [
-  'ICU / Critical Care', 'Emergency Department', 'Medical-Surgical',
-  'Operating Room', 'Labor & Delivery', 'Pediatrics', 'NICU',
-  'Oncology', 'Telemetry', 'Step-Down / PCU', 'Psychiatric',
-  'Home Health', 'Long-Term Care', 'Rehabilitation', 'Other'
-]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY'
-]
+import { SPECIALTIES, US_STATES } from '../lib/constants'
 
 export default function Jobs() {
   const { user, profile } = useAuth()
@@ -30,6 +17,7 @@ export default function Jobs() {
   const [applyModal, setApplyModal] = useState(null)
   const [coverNote, setCoverNote] = useState('')
   const [applySuccess, setApplySuccess] = useState(false)
+  const [nonNurseToast, setNonNurseToast] = useState(false)
 
   const [filters, setFilters] = useState({
     specialty: '', state: '', shift_type: '', pay_min: '', pay_max: ''
@@ -249,8 +237,10 @@ export default function Jobs() {
                         ) : (
                           <button onClick={() => {
                             if (!user) navigate('/nurse-signup')
-                            else if (profile?.role !== 'nurse') return
-                            else setApplyModal(job)
+                            else if (profile?.role !== 'nurse') {
+                              setNonNurseToast(true)
+                              setTimeout(() => setNonNurseToast(false), 3000)
+                            } else setApplyModal(job)
                           }}
                             style={{ padding: '8px 20px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
                             {!user ? 'Sign Up to Apply' : 'Apply Now'}
@@ -265,6 +255,13 @@ export default function Jobs() {
           </div>
         </div>
       </div>
+
+      {/* Non-nurse toast */}
+      {nonNurseToast && (
+        <div style={{ position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)', background: 'var(--deep-navy)', color: 'white', padding: '12px 24px', borderRadius: '4px', fontSize: '13px', zIndex: 300, boxShadow: '0 8px 24px rgba(44,62,80,0.2)' }}>
+          Only nurses can apply to jobs.
+        </div>
+      )}
 
       {/* Apply modal */}
       {applyModal && (

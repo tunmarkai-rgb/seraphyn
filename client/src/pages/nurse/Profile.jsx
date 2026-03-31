@@ -3,20 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
-
-const SPECIALTIES = [
-  'ICU / Critical Care', 'Emergency Department', 'Medical-Surgical',
-  'Operating Room', 'Labor & Delivery', 'Pediatrics', 'NICU',
-  'Oncology', 'Telemetry', 'Step-Down / PCU', 'Psychiatric',
-  'Home Health', 'Long-Term Care', 'Rehabilitation', 'Other'
-]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY'
-]
+import { SPECIALTIES, US_STATES } from '../../lib/constants'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
@@ -124,8 +111,7 @@ export default function NurseProfile() {
       }
       const { error: saveError } = await supabase
         .from('nurse_profiles')
-        .update(updates)
-        .eq('user_id', user.id)
+        .upsert({ ...updates, user_id: user.id }, { onConflict: 'user_id' })
       if (saveError) throw saveError
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)

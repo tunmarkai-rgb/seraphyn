@@ -294,7 +294,7 @@ export default function NurseDashboard() {
                     <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)' }}>
                       {job.pay_rate && `$${job.pay_rate}`}<span style={{ fontSize: '11px', fontFamily: 'DM Sans', fontWeight: '300', color: 'var(--text-muted)' }}>{job.pay_rate && '/hr'}</span>
                     </span>
-                    <Link to={`/jobs`} style={{ padding: '6px 12px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    <Link to={`/jobs?job=${job.id}`} style={{ padding: '6px 12px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                       Apply
                     </Link>
                   </div>

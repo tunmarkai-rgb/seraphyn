@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
+import { SPECIALTIES, US_STATES } from '../lib/constants'
 
 export default function NurseSignup() {
   const { signUp } = useAuth()
@@ -13,19 +15,6 @@ export default function NurseSignup() {
     licenseState: '', specialty: '', yearsExperience: ''
   })
 
-  const specialties = [
-    'ICU / Critical Care', 'Emergency Room', 'Operating Room',
-    'Pediatrics', 'NICU', 'Telemetry', 'Med-Surg',
-    'Labor & Delivery', 'Other'
-  ]
-
-  const states = [
-    'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
-    'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
-    'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-    'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-    'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
-  ]
 
   const handle = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -40,13 +29,27 @@ export default function NurseSignup() {
     }
     setLoading(true)
     try {
-      const { error } = await signUp(
+      const { data, error } = await signUp(
         form.email,
         form.password,
         'nurse',
         `${form.firstName} ${form.lastName}`
       )
       if (error) throw error
+
+      // Upsert nurse_profiles row with signup data
+      if (data?.user?.id) {
+        const expMap = { '1-2 years': 1, '3-5 years': 3, '6-10 years': 6, '10-15 years': 10, '15+ years': 15 }
+        await supabase.from('nurse_profiles').upsert({
+          user_id: data.user.id,
+          first_name: form.firstName,
+          last_name: form.lastName,
+          license_state: form.licenseState,
+          specialty: form.specialty,
+          years_experience: expMap[form.yearsExperience] || null,
+        }, { onConflict: 'user_id' })
+      }
+
       navigate('/login?signup=nurse')
     } catch (err) {
       setError(err.message)
@@ -64,7 +67,7 @@ export default function NurseSignup() {
     }} className="auth-layout">
       {/* Left panel */}
       <div style={{
-        background: 'var(--deep-teal)',
+        background: 'var(--deep-navy)',
         padding: '60px 48px',
         display: 'flex',
         flexDirection: 'column',
@@ -79,15 +82,15 @@ export default function NurseSignup() {
           }}>
             <div style={{
               width: '36px', height: '36px', borderRadius: '50%',
-              border: '1px solid var(--gold)',
+              border: '1px solid var(--warm-gold)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--gold)', fontSize: '16px'
+              color: 'var(--warm-gold)', fontSize: '16px'
             }}>✦</div>
             <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>
               Seraphyn
             </span>
           </Link>
-          <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '16px' }}>
+          <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '16px' }}>
             Nurse Portal
           </p>
           <h1 style={{
@@ -95,14 +98,14 @@ export default function NurseSignup() {
             fontWeight: '300', color: 'var(--cream)', lineHeight: '1.15',
             marginBottom: '24px'
           }}>
-            Your next great<br /><em style={{ color: 'var(--gold)', fontStyle: 'italic' }}>assignment</em><br />awaits
+            Your next great<br /><em style={{ color: 'var(--warm-gold)', fontStyle: 'italic' }}>assignment</em><br />awaits
           </h1>
           <p style={{ color: 'rgba(245,240,232,0.6)', fontSize: '14px', fontWeight: '300', lineHeight: '1.8', marginBottom: '40px' }}>
             Join thousands of verified nurses earning premium rates on travel and contract assignments nationwide.
           </p>
           {['Premium assignments, no hidden fees', 'Average 4–5 day placement', 'Verified and secure platform'].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-              <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '1px solid rgba(196,151,90,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'var(--gold)', flexShrink: 0 }}>✓</div>
+              <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '1px solid rgba(196,151,90,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'var(--warm-gold)', flexShrink: 0 }}>✓</div>
               <span style={{ fontSize: '13px', color: 'rgba(245,240,232,0.7)', fontWeight: '300' }}>{item}</span>
             </div>
           ))}
@@ -119,7 +122,7 @@ export default function NurseSignup() {
         overflowY: 'auto'
       }}>
         <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto' }}>
-          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '32px', color: 'var(--deep-teal)', marginBottom: '6px' }}>
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '32px', color: 'var(--deep-navy)', marginBottom: '6px' }}>
             Create Your Profile
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '32px' }}>
@@ -159,7 +162,7 @@ export default function NurseSignup() {
                 <select name="licenseState" value={form.licenseState} onChange={handle} required
                   style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                   <option value="">Select state...</option>
-                  {states.map(s => <option key={s} value={s}>{s}</option>)}
+                  {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -167,7 +170,7 @@ export default function NurseSignup() {
                 <select name="specialty" value={form.specialty} onChange={handle} required
                   style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                   <option value="">Select...</option>
-                  {specialties.map(s => <option key={s} value={s}>{s}</option>)}
+                  {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>
@@ -182,7 +185,7 @@ export default function NurseSignup() {
             </div>
 
             <button type="submit" disabled={loading} style={{
-              width: '100%', padding: '13px', background: loading ? 'var(--teal-mid)' : 'var(--deep-teal)',
+              width: '100%', padding: '13px', background: loading ? 'var(--teal-mid)' : 'var(--deep-navy)',
               color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px',
               letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500',
               cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 0.2s'

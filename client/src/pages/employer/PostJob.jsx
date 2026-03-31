@@ -3,20 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
-
-const SPECIALTIES = [
-  'ICU / Critical Care', 'Emergency Department', 'Medical-Surgical',
-  'Operating Room', 'Labor & Delivery', 'Pediatrics', 'NICU',
-  'Oncology', 'Telemetry', 'Step-Down / PCU', 'Psychiatric',
-  'Home Health', 'Long-Term Care', 'Rehabilitation', 'Other'
-]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY'
-]
+import { SPECIALTIES, US_STATES } from '../../lib/constants'
 
 export default function PostJob() {
   const { user } = useAuth()
@@ -47,12 +34,16 @@ export default function PostJob() {
       .select('id, onboarding_stage, approved_at')
       .eq('user_id', user.id)
       .single()
-    if (data) {
-      setEmpProfileId(data.id)
-      if (data.onboarding_stage < 3 || !data.approved_at) {
-        navigate('/employer/onboarding')
-      }
+    if (!data) {
+      setError('Profile not found. Complete your account setup before posting jobs.')
+      navigate('/employer/onboarding')
+      return
     }
+    if (data.onboarding_stage < 3 || !data.approved_at) {
+      navigate('/employer/onboarding')
+      return
+    }
+    setEmpProfileId(data.id)
   }
 
   function handleJob(e) { setJobForm({ ...jobForm, [e.target.name]: e.target.value }) }

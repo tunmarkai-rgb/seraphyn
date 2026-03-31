@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import AdminLayout from '../../components/AdminLayout'
+import StatusBadge from '../../components/StatusBadge'
 
 export default function AdminEmployers() {
-  const [employers, setEmployers] = useState([])
+  const [allEmployers, setAllEmployers] = useState([])
   const [filter, setFilter] = useState('pending')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [expanded, setExpanded] = useState(null)
 
-  useEffect(() => { loadEmployers() }, [filter])
+  const employers = filter === 'all' ? allEmployers : allEmployers.filter(e => e.users?.status === filter)
+
+  useEffect(() => { loadEmployers() }, [])
 
   async function loadEmployers() {
     setLoading(true)
-    const query = supabase
+    const { data } = await supabase
       .from('employer_profiles')
       .select('*, users!inner(id, email, status, full_name, created_at)')
       .order('created_at', { ascending: false })
-    if (filter !== 'all') query.eq('users.status', filter)
-    const { data } = await query
-    setEmployers(data || [])
+    setAllEmployers(data || [])
     setLoading(false)
   }
 
@@ -48,13 +49,15 @@ export default function AdminEmployers() {
     setActionLoading(null)
   }
 
+  const counts = allEmployers.reduce((acc, e) => { acc[e.users?.status] = (acc[e.users?.status] || 0) + 1; return acc }, {})
+
   return (
     <AdminLayout title="Employer Management">
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
         {[['all','All'],['pending','Pending'],['approved','Approved'],['rejected','Rejected'],['suspended','Suspended']].map(([val, label]) => (
           <button key={val} onClick={() => setFilter(val)}
             style={{ padding: '7px 16px', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer', border: filter === val ? '1px solid var(--deep-navy)' : '1px solid var(--border)', background: filter === val ? 'var(--deep-navy)' : 'white', color: filter === val ? 'white' : 'var(--text-muted)' }}>
-            {label}
+            {label} {val !== 'all' && counts[val] ? `(${counts[val]})` : ''}
           </button>
         ))}
       </div>
@@ -154,14 +157,4 @@ export default function AdminEmployers() {
       )}
     </AdminLayout>
   )
-}
-
-function StatusBadge({ status }) {
-  const cfg = {
-    pending:   { label: 'Pending',   bg: 'rgba(200,169,110,0.12)', color: 'var(--warm-gold)' },
-    approved:  { label: 'Approved',  bg: 'rgba(45,122,79,0.1)',    color: 'var(--success)' },
-    rejected:  { label: 'Rejected',  bg: 'rgba(180,60,60,0.1)',    color: '#B43C3C' },
-    suspended: { label: 'Suspended', bg: 'rgba(90,107,122,0.12)',  color: 'var(--text-muted)' },
-  }[status] || { label: '—', bg: 'var(--border)', color: 'var(--text-muted)' }
-  return <span style={{ padding: '4px 10px', borderRadius: '2px', fontSize: '10px', fontWeight: '500', letterSpacing: '0.06em', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
 }

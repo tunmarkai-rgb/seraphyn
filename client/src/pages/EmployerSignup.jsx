@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 export default function EmployerSignup() {
   const { signUp } = useAuth()
@@ -40,13 +41,26 @@ export default function EmployerSignup() {
     }
     setLoading(true)
     try {
-      const { error } = await signUp(
+      const { data, error } = await signUp(
         form.email,
         form.password,
         'employer',
         form.contactName
       )
       if (error) throw error
+
+      // Upsert employer_profiles row with signup data
+      if (data?.user?.id) {
+        await supabase.from('employer_profiles').upsert({
+          user_id: data.user.id,
+          org_name: form.orgName,
+          contact_name: form.contactName,
+          org_type: form.orgType,
+          state: form.state,
+          onboarding_stage: 1,
+        }, { onConflict: 'user_id' })
+      }
+
       navigate('/login?signup=employer')
     } catch (err) {
       setError(err.message)
@@ -82,7 +96,7 @@ export default function EmployerSignup() {
         justifyContent: 'center',
       }}>
         <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '48px', textDecoration: 'none' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1px solid var(--gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', fontSize: '16px' }}>✦</div>
+          <div style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1px solid var(--warm-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warm-gold)', fontSize: '16px' }}>✦</div>
           <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>Seraphyn</span>
         </Link>
 
@@ -106,7 +120,7 @@ export default function EmployerSignup() {
       {/* Right panel */}
       <div style={{ background: 'var(--cream)', padding: '60px 48px', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflowY: 'auto' }}>
         <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto' }}>
-          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '32px', color: 'var(--deep-teal)', marginBottom: '6px' }}>
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '32px', color: 'var(--deep-navy)', marginBottom: '6px' }}>
             Register Your Organization
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '32px' }}>

@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
-
-const SPECIALTIES = [
-  'ICU / Critical Care', 'Emergency Department', 'Medical-Surgical',
-  'Operating Room', 'Labor & Delivery', 'Pediatrics', 'NICU',
-  'Oncology', 'Telemetry', 'Step-Down / PCU', 'Psychiatric',
-  'Home Health', 'Long-Term Care', 'Rehabilitation', 'Other'
-]
+import { SPECIALTIES } from '../lib/constants'
 
 export default function NurseDirectory() {
   const { user, profile } = useAuth()
@@ -189,10 +184,13 @@ export default function NurseDirectory() {
                           🔒 Full profile unlocked after contract approval
                         </p>
                       )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--success)', padding: '6px 8px', background: 'rgba(45,122,79,0.06)', borderRadius: '2px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--success)', padding: '6px 8px', background: 'rgba(45,122,79,0.06)', borderRadius: '2px', marginBottom: '10px' }}>
                         <span style={{ width: '5px', height: '5px', background: 'var(--success)', borderRadius: '50%', display: 'inline-block' }} />
                         Available for {nurse.shift_preference || 'All'} Shifts
                       </div>
+                      <Link to={`/nurses/${nurse.id}`} style={{ display: 'block', textAlign: 'center', padding: '7px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--deep-navy)', textDecoration: 'none' }}>
+                        View Profile →
+                      </Link>
                     </div>
                   </div>
                 ))}

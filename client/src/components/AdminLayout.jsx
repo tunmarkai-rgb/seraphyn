@@ -38,7 +38,7 @@ export default function AdminLayout({ children, title }) {
         flexShrink: 0, position: 'fixed', top: 0, left: 0, height: '100vh', zIndex: 50,
         transform: sidebarOpen ? 'translateX(0)' : undefined,
         transition: 'transform 0.3s'
-      }} className="admin-sidebar">
+      }} className={`admin-sidebar${sidebarOpen ? ' open' : ''}`}>
 
         {/* Logo */}
         <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>

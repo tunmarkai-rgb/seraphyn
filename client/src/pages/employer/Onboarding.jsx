@@ -1,20 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
+import { US_STATES } from '../../lib/constants'
 
 const ORG_TYPES = [
   'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
   'Home Health Agency', 'Rehabilitation Center', 'Surgical Center',
   'Behavioral Health', 'School Health', 'Other'
-]
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY'
 ]
 
 export default function EmployerOnboarding() {
@@ -28,10 +22,30 @@ export default function EmployerOnboarding() {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const pollRef = useRef(null)
 
   useEffect(() => {
     if (user) loadProfile()
   }, [user])
+
+  // Poll every 3s when on Stage 2 waiting for contract signature
+  useEffect(() => {
+    if (stage === 2 && !empProfile?.contract_signed) {
+      pollRef.current = setInterval(async () => {
+        const { data } = await supabase
+          .from('employer_profiles')
+          .select('contract_signed, contract_signed_at, onboarding_stage, approved_at')
+          .eq('user_id', user.id)
+          .single()
+        if (data?.contract_signed) {
+          setEmpProfile(prev => ({ ...prev, ...data }))
+          if (data.onboarding_stage >= 3) setStage(3)
+          clearInterval(pollRef.current)
+        }
+      }, 3000)
+    }
+    return () => clearInterval(pollRef.current)
+  }, [stage, empProfile?.contract_signed, user])
 
   async function loadProfile() {
     const { data } = await supabase
@@ -66,13 +80,13 @@ export default function EmployerOnboarding() {
     try {
       const { error: err } = await supabase
         .from('employer_profiles')
-        .update({
+        .upsert({
           ...form,
+          user_id: user.id,
           bed_count: form.bed_count ? parseInt(form.bed_count) : null,
           onboarding_stage: 2,
           updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id)
+        }, { onConflict: 'user_id' })
       if (err) throw err
       setStage(2)
       loadProfile()

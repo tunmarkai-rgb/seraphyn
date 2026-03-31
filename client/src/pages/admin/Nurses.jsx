@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import AdminLayout from '../../components/AdminLayout'
+import StatusBadge from '../../components/StatusBadge'
 
 export default function AdminNurses() {
-  const [nurses, setNurses] = useState([])
+  const [allNurses, setAllNurses] = useState([])
   const [filter, setFilter] = useState('pending')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [expanded, setExpanded] = useState(null)
 
-  useEffect(() => { loadNurses() }, [filter])
+  const nurses = filter === 'all' ? allNurses : allNurses.filter(n => n.users?.status === filter)
+
+  useEffect(() => { loadNurses() }, [])
 
   async function loadNurses() {
     setLoading(true)
-    const query = supabase
+    const { data } = await supabase
       .from('nurse_profiles')
       .select('*, users!inner(id, email, status, full_name, created_at)')
       .order('created_at', { ascending: false })
-    if (filter !== 'all') query.eq('users.status', filter)
-    const { data } = await query
-    setNurses(data || [])
+    setAllNurses(data || [])
     setLoading(false)
   }
 
@@ -45,7 +46,7 @@ export default function AdminNurses() {
     setActionLoading(null)
   }
 
-  const counts = nurses.reduce((acc, n) => { acc[n.users?.status] = (acc[n.users?.status] || 0) + 1; return acc }, {})
+  const counts = allNurses.reduce((acc, n) => { acc[n.users?.status] = (acc[n.users?.status] || 0) + 1; return acc }, {})
 
   return (
     <AdminLayout title="Nurse Management">
@@ -160,14 +161,4 @@ export default function AdminNurses() {
       )}
     </AdminLayout>
   )
-}
-
-function StatusBadge({ status }) {
-  const cfg = {
-    pending:   { label: 'Pending',   bg: 'rgba(200,169,110,0.12)', color: 'var(--warm-gold)' },
-    approved:  { label: 'Approved',  bg: 'rgba(45,122,79,0.1)',    color: 'var(--success)' },
-    rejected:  { label: 'Rejected',  bg: 'rgba(180,60,60,0.1)',    color: '#B43C3C' },
-    suspended: { label: 'Suspended', bg: 'rgba(90,107,122,0.12)',  color: 'var(--text-muted)' },
-  }[status] || { label: status || '—', bg: 'var(--border)', color: 'var(--text-muted)' }
-  return <span style={{ padding: '4px 10px', borderRadius: '2px', fontSize: '10px', fontWeight: '500', letterSpacing: '0.06em', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
 }

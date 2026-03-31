@@ -147,7 +147,7 @@ export default function NurseApplications() {
 
                   {app.admin_notes && (
                     <div style={{ background: 'rgba(126,181,200,0.08)', border: '1px solid rgba(126,181,200,0.25)', borderRadius: '2px', padding: '10px 14px', marginBottom: '12px' }}>
-                      <p style={{ fontSize: '12px', color: 'var(--sky-blue)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Employer Note</p>
+                      <p style={{ fontSize: '12px', color: 'var(--sky-blue)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admin Note</p>
                       <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>{app.admin_notes}</p>
                     </div>
                   )}
