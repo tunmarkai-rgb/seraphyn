@@ -55,20 +55,27 @@ seraphyn/
 │   │   ├── App.jsx            ← Routes + AuthProvider
 │   │   ├── index.css          ← Global styles + CSS variables
 │   │   ├── lib/
-│   │   │   └── supabase.js    ← Supabase client (anon key)
+│   │   │   ├── supabase.js    ← Supabase client (anon key)
+│   │   │   └── constants.js   ← Canonical SPECIALTIES + US_STATES arrays
 │   │   ├── context/
 │   │   │   └── AuthContext.jsx ← Global auth state
 │   │   ├── components/
 │   │   │   ├── Navbar.jsx     ← Reusable navbar with logo
-│   │   │   └── ProtectedRoute.jsx ← Role-based route guard
+│   │   │   ├── ProtectedRoute.jsx ← Role-based route guard
+│   │   │   ├── AdminLayout.jsx ← Sidebar layout for all admin pages
+│   │   │   └── StatusBadge.jsx ← Shared status pill (pending/approved/etc)
 │   │   └── pages/
 │   │       ├── HomePage.jsx   ← Full marketing homepage
 │   │       ├── Login.jsx      ← Unified login
 │   │       ├── NurseSignup.jsx
 │   │       ├── EmployerSignup.jsx
-│   │       ├── nurse/         ← Nurse portal pages (TODO)
-│   │       ├── employer/      ← Employer portal pages (TODO)
-│   │       └── admin/         ← Admin dashboard (TODO)
+│   │       ├── Jobs.jsx       ← Public job listings with filters
+│   │       ├── Nurses.jsx     ← Nurse directory (employer-facing)
+│   │       ├── NurseDetail.jsx ← Individual nurse profile page
+│   │       ├── Messages.jsx   ← In-app messaging (mobile-responsive)
+│   │       ├── nurse/         ← Dashboard.jsx, Profile.jsx, Applications.jsx
+│   │       ├── employer/      ← Dashboard.jsx, Onboarding.jsx, PostJob.jsx
+│   │       └── admin/         ← Dashboard, Nurses, Employers, Jobs, Applications, Payments, Shifts
 │   ├── .env                   ← NEVER commit this
 │   ├── index.html             ← Shell with SEO meta tags
 │   └── package.json
@@ -253,42 +260,86 @@ pgcrypto, uuid-ossp, pg_stat_statements, pg_graphql, pg_trgm, citext, supabase_v
 
 ## Pages Already Built
 
+### Core / Auth
 - `HomePage.jsx` — full marketing page, all sections, real brand colors
-- `Login.jsx` — unified login with role-based redirect
-- `NurseSignup.jsx` — full signup form with specialty and state dropdowns
-- `EmployerSignup.jsx` — org registration form
+- `Login.jsx` — unified login with role-based redirect (reads role from public.users table)
+- `NurseSignup.jsx` — full signup form, upserts nurse_profiles row on creation
+- `EmployerSignup.jsx` — org registration form, upserts employer_profiles row on creation
 - `Navbar.jsx` — reusable, transparent on scroll, mobile hamburger, auth-aware
 - `ProtectedRoute.jsx` — role-based route guard
 - `AuthContext.jsx` — global auth state, signUp/signIn/signOut
-
----
-
-## Pages Still To Build
+- `StatusBadge.jsx` — shared component used across all admin pages
+- `constants.js` — canonical SPECIALTIES and US_STATES arrays (imported everywhere)
 
 ### Nurse Portal
-- `/nurse/dashboard` — applications tracker, job recommendations, profile completion, docs status
-- `/nurse/profile` — edit all profile fields, upload resume and license
-- `/nurse/applications` — all applications with status
+- `/nurse/dashboard` — applications tracker, job recommendations, profile completion, doc status
+- `/nurse/profile` — edit all profile fields, upload resume and license (upsert-safe)
+- `/nurse/applications` — all applications with status timeline
 
 ### Employer Portal
-- `/employer/onboarding` — 3-stage flow (profile, DocuSeal signing, pending approval)
-- `/employer/dashboard` — active postings, applicants, quick actions, stats
-- `/employer/post-job` — post job or per diem shift form
+- `/employer/onboarding` — 3-stage flow (profile → DocuSeal signing → pending approval); polls for contract signature every 3s
+- `/employer/dashboard` — active postings, applicant counts, quick actions, stats
+- `/employer/post-job` — post job or per diem shift form (guards unapproved accounts)
 
 ### Shared
-- `/jobs` — public job listings with filters (specialty, state, shift type, pay range)
-- `/nurses` — nurse directory for employers (limited profile info)
-- `/messages` — in-app messaging thread view
+- `/jobs` — public job listings with filters (specialty, state, shift type, pay range); apply modal for nurses
+- `/nurses` — nurse directory with limited/full profile toggle based on employer approval; links to `/nurses/:id`
+- `/nurses/:id` — individual nurse profile page; full details gated by employer approval
+- `/messages` — in-app messaging thread view with mobile single-panel layout and back button
 
 ### Admin Dashboard (NON-TECHNICAL CLIENT)
 **Kundayi is non-technical. Every admin action must be point-and-click with zero code.**
 - `/admin` — platform stats overview (total nurses, employers, jobs, revenue, pending approvals)
-- `/admin/nurses` — nurse approval queue, view profile + docs, one-click approve/reject
-- `/admin/employers` — employer approvals, view org + signed contract, approve/reject
+- `/admin/nurses` — nurse approval queue, view profile + docs, one-click approve/reject/suspend; client-side filter with live tab counts
+- `/admin/employers` — employer approvals, view org + signed contract, approve/reject/suspend; client-side filter with live tab counts
 - `/admin/jobs` — all listings, pause/remove/edit
 - `/admin/applications` — all applications across platform
 - `/admin/payments` — Stripe transactions, set placement fee %, export history
 - `/admin/shifts` — per diem shift tracker
+
+---
+
+## Bugs Fixed
+
+All 22 issues resolved as of 2026-03-31:
+
+### Critical
+1. **Vercel SPA routing broken** — moved `vercel.json` from monorepo root into `client/`; all routes now load correctly
+2. **Profile rows never created on signup** — added `.upsert()` calls in NurseSignup and EmployerSignup after auth creation
+3. **Admin login redirect failed** — Login now queries `public.users.role` instead of `user_metadata.role` (admin accounts have no metadata)
+4. **Messages receiver_id was undefined** — `loadThreads` query now selects `user_id` from both `nurse_profiles` and `employer_profiles`
+5. **Admin sidebar stuck closed on mobile** — AdminLayout now adds the `open` CSS class dynamically instead of using inline style (CSS `!important` was overriding it)
+
+### Medium
+6. **Nurse profile save silently failed** — changed `.update().eq()` to `.upsert()` with `onConflict: 'user_id'`
+7. **Employer onboarding save silently failed** — changed `.update().eq()` to `.upsert()` with `onConflict: 'user_id'`
+8. **PostJob crashed for unapproved employers** — added null check and redirect to `/employer/onboarding` if profile missing or not approved
+9. **Non-nurse Apply click did nothing** — shows a toast notification: "Only nurses can apply to jobs."
+10. **Applications page label wrong** — changed "Employer Note" to "Admin Note" (notes are set by admin, not employer)
+11. **Signup form data lost** — NurseSignup now saves first_name, last_name, license_state, specialty, years_experience to nurse_profiles immediately after signup
+12. **Specialty list inconsistent across files** — created `src/lib/constants.js` with canonical SPECIALTIES and US_STATES; removed all inline duplicates across 6 files
+13. **Stage 2 contract sign never auto-advanced** — added polling useEffect (3s interval) that detects `contract_signed` and advances to Stage 3
+14. **Admin filter tabs showed wrong counts** — AdminNurses and AdminEmployers now fetch all records once and filter client-side; counts computed from full unfiltered dataset
+
+### Low
+15. **No route for individual nurse profiles** — created `NurseDetail.jsx`, registered `/nurses/:id` route, added "View Profile →" link on all nurse cards
+16. **Dashboard Apply button linked to /jobs root** — changed to `/jobs?job={id}` to provide job context
+17. **Login/Signup used undefined CSS variables** — replaced `var(--deep-teal)` → `var(--deep-navy)` and `var(--gold)` → `var(--warm-gold)` across Login, NurseSignup, EmployerSignup, ProtectedRoute
+18. **Messages unusable on mobile** — added `activeView` state (`threads` | `conversation`), single-panel layout at ≤768px, and Back button in conversation header
+19. **StatusBadge duplicated in every admin file** — extracted to `src/components/StatusBadge.jsx`, imported in AdminNurses and AdminEmployers
+20. **Unused packages in bundle** — removed `axios` and `react-hook-form` from `package.json`
+
+---
+
+## Known Limitations
+
+The following integrations are **not yet connected** and require additional work before the platform is production-ready:
+
+- **Stripe not connected** — keys are placeholder values in `.env`; subscription billing and placement fee charging are UI-only stubs
+- **DocuSeal not installed** — VPS has not been provisioned; the Stage 2 "sign agreement" screen shows the email prompt but no document is actually sent yet
+- **n8n workflows not configured** — Phase 3 work; resume parsing, job matching, credential screening, and approval notification emails are not yet live
+- **GHL webhook not live** — Contract 2 (separate $200 scope); no contacts are being pushed to GoHighLevel on signup
+- **VPS not yet provisioned** — backend is running on localhost only; frontend is deployed to Vercel but the Node.js server (`server/`) is not live; all data operations go directly from the React frontend to Supabase via the anon key
 
 ---
 
@@ -395,11 +446,29 @@ CLIENT_URL=http://localhost:5173
 
 ## Milestones
 
-| Milestone | Scope | Due | Payment |
-|---|---|---|---|
-| M1 — Foundation | Auth, nurse/employer signup, core dashboards, VPS live | Day 10 | $180 |
-| M2 — Full Platform | Payments, DocuSeal, messaging, AI resume parsing | Day 17 | $150 |
-| M3 — Launch Ready | n8n workflows, GHL webhook, SEO, QA, Loom | Day 21 | $120 |
+| Milestone | Scope | Due | Payment | Status |
+|---|---|---|---|---|
+| M1 — Foundation | Auth, nurse/employer signup, core dashboards, VPS live | Day 10 | $180 | 🟡 IN PROGRESS |
+| M2 — Full Platform | Payments, DocuSeal, messaging, AI resume parsing | Day 17 | $150 | ⬜ Not started |
+| M3 — Launch Ready | n8n workflows, GHL webhook, SEO, QA, Loom | Day 21 | $120 | ⬜ Not started |
+
+### M1 Progress
+
+**Completed:**
+- Auth system (Supabase Auth + public.users role table)
+- Nurse signup with profile pre-fill
+- Employer signup with profile pre-fill
+- All nurse portal pages: Dashboard, Profile editor, Applications tracker
+- All employer portal pages: Onboarding (3-stage), Dashboard, Post Job / Shift
+- Shared pages: Jobs listing, Nurse directory, Individual nurse profiles, In-app messaging
+- Full admin dashboard: Stats, Nurse approvals, Employer approvals, Jobs, Applications, Payments, Shifts
+- 22 bugs audited and resolved (see Bugs Fixed section)
+- Frontend deployed to Vercel at https://seraphyn.vercel.app
+
+**Still needed to close M1:**
+- VPS provisioned on Hostinger (Node.js backend deployed and live)
+- Domain seraphyncare.com transferred and pointed to VPS
+- SSL certificate via Let's Encrypt
 
 ---
 
