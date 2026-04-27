@@ -1,5 +1,8 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+
+const BRAND_COLORS = ['#2C3E50', '#7EB5C8', '#C8A96E']
 
 const stats = [
   { number: '2,400+', label: 'Verified Nurses' },
@@ -15,13 +18,13 @@ const steps = [
   { num: '4', title: 'Apply & Hire', desc: 'Direct applications, streamlined contracts, and fast onboarding. Most placements confirmed within 4–5 days.' },
 ]
 
-const jobs = [
+const FALLBACK_JOBS = [
   { org: 'St. Mary\'s Medical Center', location: 'Chicago, IL', title: 'Travel ICU Registered Nurse', specialty: 'Intensive Care Unit', shift: 'Night Shift', contract: '13 Weeks', pay: '$78', initials: 'SM', color: '#2C3E50' },
   { org: 'Northwestern Health', location: 'Seattle, WA', title: 'Pediatric ER Nurse — Travel', specialty: 'Emergency Department', shift: 'Day Shift', contract: '26 Weeks', pay: '$85', initials: 'NH', color: '#7EB5C8' },
   { org: 'Baystate Health System', location: 'Boston, MA', title: 'OR Circulator RN — Surgical', specialty: 'Operating Room', shift: 'Mixed Shifts', contract: '13 Weeks', pay: '$92', initials: 'BH', color: '#C8A96E' },
 ]
 
-const nurses = [
+const FALLBACK_NURSES = [
   { name: 'Sarah C.', creds: 'RN, BSN, CCRN', specialty: 'ICU / Critical Care', exp: '8 yrs', initials: 'SC', color: '#2C3E50', skills: ['Ventilator', 'ACLS', 'CRRT'] },
   { name: 'Marcus R.', creds: 'RN, BSN, CEN', specialty: 'Emergency Dept.', exp: '12 yrs', initials: 'MR', color: '#7EB5C8', skills: ['Trauma', 'TNCC', 'PALS'] },
   { name: 'Amara T.', creds: 'RN, MSN, CNOR', specialty: 'Surgical / OR', exp: '6 yrs', initials: 'AT', color: '#C8A96E', skills: ['Circulator', 'Robotics', 'Scrub'] },
@@ -34,6 +37,51 @@ const testimonials = [
 ]
 
 export default function HomePage() {
+  const [jobs, setJobs] = useState(FALLBACK_JOBS)
+  const [nurses, setNurses] = useState(FALLBACK_NURSES)
+
+  useEffect(() => {
+    const api = import.meta.env.VITE_API_URL || ''
+
+    fetch(`${api}/api/jobs?limit=3`)
+      .then(r => r.json())
+      .then(data => {
+        if (!Array.isArray(data) || data.length === 0) return
+        setJobs(data.map((job, i) => ({
+          id: job.id,
+          org: job.employer_profiles?.org_name || 'Healthcare Facility',
+          location: job.employer_profiles ? `${job.employer_profiles.city}, ${job.employer_profiles.state}` : job.state,
+          title: job.title,
+          specialty: job.specialty,
+          shift: job.shift_type,
+          contract: job.contract_length || 'Contract',
+          pay: job.pay_rate ? `$${job.pay_rate}` : 'Competitive',
+          initials: (job.employer_profiles?.org_name || 'HC').slice(0, 2).toUpperCase(),
+          color: BRAND_COLORS[i % 3],
+        })))
+      })
+      .catch(() => {})
+
+    fetch(`${api}/api/nurses/featured`)
+      .then(r => r.json())
+      .then(data => {
+        if (!Array.isArray(data) || data.length === 0) return
+        setNurses(data.map((nurse, i) => {
+          const certs = Array.isArray(nurse.certifications) ? nurse.certifications : []
+          return {
+            name: `${nurse.first_name || ''}${nurse.last_name ? ' ' + nurse.last_name[0] + '.' : ''}`.trim(),
+            creds: certs.length > 0 ? 'RN, ' + certs.slice(0, 2).join(', ') : 'RN',
+            specialty: nurse.specialty,
+            exp: nurse.years_experience ? `${nurse.years_experience} yrs` : '',
+            initials: `${nurse.first_name?.[0] || ''}${nurse.last_name?.[0] || ''}`.toUpperCase(),
+            color: BRAND_COLORS[i % 3],
+            skills: certs.slice(0, 3),
+          }
+        }))
+      })
+      .catch(() => {})
+  }, [])
+
   return (
     <div style={{ fontFamily: 'DM Sans, sans-serif', background: 'var(--warm-white)' }}>
 
@@ -190,7 +238,7 @@ export default function HomePage() {
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '24px', fontWeight: '500', color: 'var(--deep-navy)' }}>
                     {job.pay}<span style={{ fontSize: '12px', fontFamily: 'DM Sans, sans-serif', fontWeight: '300', color: 'var(--text-muted)' }}>/hr</span>
                   </div>
-                  <Link to="/nurse-signup" style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', textDecoration: 'none' }}>
+                  <Link to={job.id ? `/jobs` : '/nurse-signup'} style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', textDecoration: 'none' }}>
                     Apply
                   </Link>
                 </div>

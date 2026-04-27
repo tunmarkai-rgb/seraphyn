@@ -39,7 +39,7 @@ export default function PostJob() {
       navigate('/employer/onboarding')
       return
     }
-    if (data.onboarding_stage < 3 || !data.approved_at) {
+    if (data.onboarding_stage !== 'approved' || !data.approved_at) {
       navigate('/employer/onboarding')
       return
     }
@@ -166,10 +166,10 @@ export default function PostJob() {
                     <label style={labelStyle}>Shift Type *</label>
                     <select name="shift_type" value={jobForm.shift_type} onChange={handleJob} required style={inputStyle}>
                       <option value="">Select...</option>
-                      <option value="Day Shift">Day Shift</option>
-                      <option value="Night Shift">Night Shift</option>
-                      <option value="Evening Shift">Evening Shift</option>
-                      <option value="Mixed Shifts">Mixed Shifts</option>
+                      <option value="day">Day Shift</option>
+                      <option value="night">Night Shift</option>
+                      <option value="evening">Evening Shift</option>
+                      <option value="mixed">Mixed Shifts</option>
                     </select>
                   </div>
                 </div>

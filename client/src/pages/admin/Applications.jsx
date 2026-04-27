@@ -109,7 +109,7 @@ export default function AdminApplications() {
                         placeholder="e.g. 12.5"
                         style={{ width: '100px', padding: '7px 10px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '13px', outline: 'none', fontFamily: 'DM Sans' }} />
                     </div>
-                    <p style={{ fontSize: '12px', color: 'var(--success)', marginTop: '18px' }}>💰 Set percentage then save to trigger billing</p>
+                    <p style={{ fontSize: '12px', color: 'var(--success)', marginTop: '18px' }}>💰 Save the percentage so Kundayi can invoice this placement offline</p>
                   </div>
                 )}
 

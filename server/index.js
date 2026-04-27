@@ -5,14 +5,17 @@ const cors = require('cors')
 const app = express()
 const PORT = process.env.PORT || 5000
 
-// Stripe webhooks need raw body — mount BEFORE express.json()
-app.use('/api/webhooks/stripe', require('./routes/webhooks').stripeRaw || express.raw({ type: 'application/json' }))
+function captureRawBody(req, res, buffer) {
+  if (buffer?.length) {
+    req.rawBody = buffer.toString('utf8')
+  }
+}
 
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 }))
-app.use(express.json())
+app.use(express.json({ verify: captureRawBody }))
 app.use(express.urlencoded({ extended: true }))
 
 // Health check
@@ -33,6 +36,7 @@ app.use('/api/nurses',    require('./routes/nurses'))
 app.use('/api/employers', require('./routes/employers'))
 app.use('/api/jobs',      require('./routes/jobs'))
 app.use('/api/admin',     require('./routes/admin'))
+app.use('/api/integrations', require('./routes/integrations'))
 app.use('/api/payments',  require('./routes/payments'))
 app.use('/api/webhooks',  require('./routes/webhooks'))
 

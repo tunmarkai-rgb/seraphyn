@@ -31,14 +31,14 @@ export default function AdminPayments() {
 
   function exportCSV() {
     const rows = [
-      ['Date', 'Employer', 'Type', 'Amount', 'Status', 'Stripe Intent'].join(','),
+      ['Date', 'Employer', 'Type', 'Amount', 'Status', 'Notes'].join(','),
       ...payments.map(p => [
         new Date(p.created_at).toLocaleDateString(),
         p.employer_profiles?.org_name || '',
         p.type,
         p.amount ? `$${(p.amount / 100).toFixed(2)}` : '',
         p.status,
-        p.stripe_payment_intent_id || ''
+        p.notes || ''
       ].join(','))
     ].join('\n')
     const blob = new Blob([rows], { type: 'text/csv' })
@@ -59,6 +59,9 @@ export default function AdminPayments() {
 
   return (
     <AdminLayout title="Payments">
+      <div style={{ marginBottom: '20px', padding: '12px 16px', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '13px', color: 'var(--text-muted)' }}>
+        Payments remain offline in M2. This screen is for manual revenue tracking only.
+      </div>
       {/* Totals */}
       <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
         {[

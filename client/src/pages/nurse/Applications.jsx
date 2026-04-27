@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
@@ -17,6 +17,7 @@ const FILTER_OPTIONS = ['all', 'submitted', 'reviewing', 'interview', 'offer', '
 
 export default function NurseApplications() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [applications, setApplications] = useState([])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -152,9 +153,15 @@ export default function NurseApplications() {
                     </div>
                   )}
 
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Applied {new Date(app.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                  </p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Applied {new Date(app.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </p>
+                    <button onClick={() => navigate(`/messages?app=${app.id}`)}
+                      style={{ padding: '5px 12px', background: 'transparent', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                      💬 Message
+                    </button>
+                  </div>
                 </div>
               )
             })}

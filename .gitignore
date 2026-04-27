@@ -3,8 +3,11 @@ node_modules
 .env.local
 .env.production
 .env.development
+.mcp.json
 dist
 dist-ssr
 *.local
 .DS_Store
 package-lock.json
+__pycache__/
+*.pyc

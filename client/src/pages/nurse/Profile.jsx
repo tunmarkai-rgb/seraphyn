@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 import { SPECIALTIES, US_STATES } from '../../lib/constants'
+import { apiRequest } from '../../lib/api'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
@@ -88,13 +89,47 @@ export default function NurseProfile() {
   async function handleResumeUpload(e) {
     const file = e.target.files[0]
     if (!file) return
-    await uploadFile(file, 'resumes', setUploadingResume, setResumeUrl)
+    const publicUrl = await uploadFile(file, 'resumes', setUploadingResume, setResumeUrl)
+    if (publicUrl) {
+      try {
+        await apiRequest('/api/integrations/events/self', {
+          method: 'POST',
+          body: {
+            event: 'nurse.document_uploaded',
+            payload: {
+              documentType: 'resume',
+              bucket: 'resumes',
+              fileUrl: publicUrl
+            }
+          }
+        })
+      } catch (eventError) {
+        console.error('Resume upload event failed:', eventError.message)
+      }
+    }
   }
 
   async function handleLicenseUpload(e) {
     const file = e.target.files[0]
     if (!file) return
-    await uploadFile(file, 'licenses', setUploadingLicense, setLicenseUrl)
+    const publicUrl = await uploadFile(file, 'licenses', setUploadingLicense, setLicenseUrl)
+    if (publicUrl) {
+      try {
+        await apiRequest('/api/integrations/events/self', {
+          method: 'POST',
+          body: {
+            event: 'nurse.document_uploaded',
+            payload: {
+              documentType: 'license',
+              bucket: 'licenses',
+              fileUrl: publicUrl
+            }
+          }
+        })
+      } catch (eventError) {
+        console.error('License upload event failed:', eventError.message)
+      }
+    }
   }
 
   async function handleSubmit(e) {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
 
@@ -9,6 +10,7 @@ export default function AdminNurses() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [expanded, setExpanded] = useState(null)
+  const [feedback, setFeedback] = useState('')
 
   const nurses = filter === 'all' ? allNurses : allNurses.filter(n => n.users?.status === filter)
 
@@ -24,12 +26,18 @@ export default function AdminNurses() {
     setLoading(false)
   }
 
-  async function approve(userId, nurseId) {
+  async function approve(nurseId) {
     setActionLoading(nurseId)
-    await supabase.from('users').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', userId)
-    await supabase.from('nurse_profiles').update({ approved_at: new Date().toISOString() }).eq('id', nurseId)
-    await loadNurses()
-    setActionLoading(null)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/nurses/${nurseId}/approve`, { method: 'PUT' })
+      await loadNurses()
+      setFeedback('Nurse approved successfully.')
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   async function reject(userId, nurseId) {
@@ -50,6 +58,11 @@ export default function AdminNurses() {
 
   return (
     <AdminLayout title="Nurse Management">
+      {feedback && (
+        <div style={{ marginBottom: '16px', padding: '12px 16px', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--deep-navy)', fontSize: '13px' }}>
+          {feedback}
+        </div>
+      )}
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
         {[['all','All'],['pending','Pending'],['approved','Approved'],['rejected','Rejected'],['suspended','Suspended']].map(([val, label]) => (
@@ -134,7 +147,7 @@ export default function AdminNurses() {
                         </a>
                       )}
                       {status !== 'approved' && (
-                        <button onClick={() => approve(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id}
+                        <button onClick={() => approve(nurse.id)} disabled={actionLoading === nurse.id}
                           style={{ padding: '8px 16px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
                           {actionLoading === nurse.id ? '...' : '✓ Approve'}
                         </button>

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 
 export default function Messages() {
   const { user, profile } = useAuth()
+  const [searchParams] = useSearchParams()
   const [threads, setThreads] = useState([])
   const [selectedThread, setSelectedThread] = useState(null)
   const [messages, setMessages] = useState([])
@@ -24,6 +26,18 @@ export default function Messages() {
   useEffect(() => {
     if (user) loadThreads()
   }, [user])
+
+  // Auto-select thread when navigated from applications page via ?app=<id>
+  useEffect(() => {
+    const appId = searchParams.get('app')
+    if (appId && threads.length > 0) {
+      const match = threads.find(t => t.application_id === appId)
+      if (match) {
+        setSelectedThread(appId)
+        if (isMobile) setActiveView('messages')
+      }
+    }
+  }, [searchParams, threads])
 
   useEffect(() => {
     if (selectedThread) {

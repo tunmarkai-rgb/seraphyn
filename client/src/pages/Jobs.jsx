@@ -80,6 +80,10 @@ export default function Jobs() {
   async function submitApplication() {
     if (!user) { navigate('/login'); return }
     if (!nurseProfileId) return
+    if (profile?.status !== 'approved') {
+      alert('Your account must be approved before you can apply to jobs.')
+      return
+    }
     setApplying(applyModal.id)
     const { error } = await supabase.from('applications').insert({
       job_id: applyModal.id,
@@ -153,10 +157,10 @@ export default function Jobs() {
                 <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Shift Type</label>
                 <select name="shift_type" value={filters.shift_type} onChange={handleFilter} style={selectStyle}>
                   <option value="">All Shifts</option>
-                  <option value="Day Shift">Day Shift</option>
-                  <option value="Night Shift">Night Shift</option>
-                  <option value="Evening Shift">Evening Shift</option>
-                  <option value="Mixed Shifts">Mixed Shifts</option>
+                  <option value="day">Day Shift</option>
+                  <option value="night">Night Shift</option>
+                  <option value="evening">Evening Shift</option>
+                  <option value="mixed">Mixed Shifts</option>
                 </select>
               </div>
               <div>

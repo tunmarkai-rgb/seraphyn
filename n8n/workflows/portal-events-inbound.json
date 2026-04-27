@@ -1,0 +1,86 @@
+{
+  "name": "Seraphyn - Portal Events Inbound",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seraphyn-events",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-portal-events",
+      "name": "Portal Events Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVApEipSr0aV73D8",
+          "name": "Seraphyn Shared Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok",
+              "name": "received",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "event-name",
+              "name": "event",
+              "value": "={{ $json.body.event || $json.event || \"unknown\" }}",
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "name": "source",
+              "value": "={{ $json.body.source || \"seraphyn-portal\" }}",
+              "type": "string"
+            },
+            {
+              "id": "sent-at",
+              "name": "sentAt",
+              "value": "={{ $json.body.sentAt || $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-acknowledge",
+      "name": "Acknowledge Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Portal Events Webhook": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

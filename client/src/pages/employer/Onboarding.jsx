@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 import { US_STATES } from '../../lib/constants'
+import { apiRequest } from '../../lib/api'
 
 const ORG_TYPES = [
   'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
@@ -15,6 +16,7 @@ export default function EmployerOnboarding() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [empProfile, setEmpProfile] = useState(null)
+  const [contractRecord, setContractRecord] = useState(null)
   const [stage, setStage] = useState(1)
   const [form, setForm] = useState({
     org_name: '', org_type: '', contact_name: '', contact_title: '',
@@ -22,40 +24,38 @@ export default function EmployerOnboarding() {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const pollRef = useRef(null)
+  const [syncingContact, setSyncingContact] = useState(false)
 
   useEffect(() => {
     if (user) loadProfile()
   }, [user])
 
-  // Poll every 3s when on Stage 2 waiting for contract signature
   useEffect(() => {
-    if (stage === 2 && !empProfile?.contract_signed) {
-      pollRef.current = setInterval(async () => {
-        const { data } = await supabase
-          .from('employer_profiles')
-          .select('contract_signed, contract_signed_at, onboarding_stage, approved_at')
-          .eq('user_id', user.id)
-          .single()
-        if (data?.contract_signed) {
-          setEmpProfile(prev => ({ ...prev, ...data }))
-          if (data.onboarding_stage >= 3) setStage(3)
-          clearInterval(pollRef.current)
-        }
-      }, 3000)
-    }
-    return () => clearInterval(pollRef.current)
-  }, [stage, empProfile?.contract_signed, user])
+    if (!user || stage !== 2) return
+
+    const interval = setInterval(() => {
+      loadProfile()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [user, stage])
 
   async function loadProfile() {
     const { data } = await supabase
       .from('employer_profiles')
-      .select('*')
+      .select('*, contracts(status, sent_at, signed_at, signed_url)')
       .eq('user_id', user.id)
       .single()
     if (data) {
       setEmpProfile(data)
-      setStage(data.onboarding_stage || 1)
+      setContractRecord(data.contracts?.[0] || null)
+      const STAGE_MAP = { profile: 1, contract: 2, approved: 3 }
+      const nextStage = data.onboarding_stage === 'approved'
+        ? 3
+        : data.contract_signed
+          ? 3
+          : STAGE_MAP[data.onboarding_stage] || 1
+      setStage(nextStage)
       setForm({
         org_name: data.org_name || '',
         org_type: data.org_type || '',
@@ -66,6 +66,22 @@ export default function EmployerOnboarding() {
         bed_count: data.bed_count || '',
         description: data.description || ''
       })
+
+      if (!data.ghl_contact_id && !syncingContact) {
+        void syncContact()
+      }
+    }
+  }
+
+  async function syncContact() {
+    if (syncingContact) return
+    setSyncingContact(true)
+    try {
+      await apiRequest('/api/integrations/ghl/sync-self', { method: 'POST' })
+    } catch (syncError) {
+      console.error('Employer onboarding GHL sync failed:', syncError.message)
+    } finally {
+      setSyncingContact(false)
     }
   }
 
@@ -84,10 +100,23 @@ export default function EmployerOnboarding() {
           ...form,
           user_id: user.id,
           bed_count: form.bed_count ? parseInt(form.bed_count) : null,
-          onboarding_stage: 2,
+          onboarding_stage: 'contract',
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' })
       if (err) throw err
+      await syncContact()
+      await apiRequest('/api/integrations/events/self', {
+        method: 'POST',
+        body: {
+          event: 'employer.signup_confirmed',
+          payload: {
+            orgType: form.org_type,
+            city: form.city,
+            state: form.state,
+            bedCount: form.bed_count ? parseInt(form.bed_count, 10) : null
+          }
+        }
+      })
       setStage(2)
       loadProfile()
     } catch (err) {
@@ -222,50 +251,42 @@ export default function EmployerOnboarding() {
           </form>
         )}
 
-        {/* ── STAGE 2: Sign Contract ── */}
+        {/* ── STAGE 2: Under Review ── */}
         {stage === 2 && (
           <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '40px', textAlign: 'center' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(200,169,110,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '28px' }}>
-              ✉️
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(126,181,200,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', fontSize: '28px' }}>
+              📋
             </div>
             <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '26px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '12px' }}>
-              Sign Your Staffing Agreement
+              Sign Your Agreement
             </h2>
             <p style={{ fontSize: '14px', color: 'var(--text-muted)', maxWidth: '460px', margin: '0 auto 24px', lineHeight: '1.7' }}>
-              A staffing agreement has been sent to <strong>{user?.email}</strong> via DocuSeal. Please open the email and complete the e-signature to proceed.
+              {contractRecord?.status === 'sent'
+                ? <>We emailed your staffing agreement to <strong>{user?.email}</strong>. Please review and sign it there to continue onboarding.</>
+                : <>Your organization profile has been received. Kundayi is preparing your agreement now, and it will be sent to <strong>{user?.email}</strong>.</>}
             </p>
-            <div style={{ background: 'var(--warm-white)', borderRadius: '4px', padding: '20px', maxWidth: '400px', margin: '0 auto 28px' }}>
-              {empProfile?.contract_signed ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-                  <span style={{ fontSize: '20px' }}>✅</span>
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--success)' }}>Agreement Signed</p>
-                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Signed on {empProfile.contract_signed_at ? new Date(empProfile.contract_signed_at).toLocaleDateString() : '—'}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-                  <span style={{ fontSize: '20px' }}>⏳</span>
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--warm-gold)' }}>Awaiting Your Signature</p>
-                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Check your email for the signing link</p>
-                  </div>
-                </div>
+            <div style={{ background: 'rgba(44,62,80,0.04)', border: '1px solid var(--border)', borderRadius: '4px', padding: '16px', maxWidth: '440px', margin: '0 auto 18px', textAlign: 'left' }}>
+              <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Contract Status</p>
+              <p style={{ fontSize: '14px', color: 'var(--deep-navy)', marginBottom: '4px' }}>
+                {contractRecord?.status === 'sent' ? 'Sent - awaiting your signature' : 'Pending send from Seraphyn team'}
+              </p>
+              {contractRecord?.sent_at && (
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Sent {new Date(contractRecord.sent_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
               )}
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
-              Can't find the email? Check your spam folder or contact{' '}
-              <a href="mailto:support@seraphyncare.com" style={{ color: 'var(--sky-blue)' }}>support@seraphyncare.com</a>
-            </p>
-            {empProfile?.contract_signed && (
-              <div style={{ background: 'rgba(45,122,79,0.08)', border: '1px solid rgba(45,122,79,0.25)', borderRadius: '4px', padding: '16px' }}>
-                <p style={{ fontSize: '13px', color: 'var(--success)' }}>
-                  ✓ Contract signed. Our team is reviewing your account. You'll receive an email once approved.
-                </p>
-              </div>
-            )}
+            <div style={{ background: 'rgba(126,181,200,0.08)', border: '1px solid rgba(126,181,200,0.3)', borderRadius: '4px', padding: '16px', maxWidth: '400px', margin: '0 auto' }}>
+              <p style={{ fontSize: '13px', color: 'var(--sky-blue)' }}>
+                Once signed, this page updates automatically and moves you to final approval.
+              </p>
+            </div>
+            <div style={{ marginTop: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                Questions? Contact us at{' '}
+                <a href="mailto:support@seraphyncare.com" style={{ color: 'var(--sky-blue)' }}>support@seraphyncare.com</a>
+              </p>
+            </div>
           </div>
         )}
 
@@ -290,7 +311,7 @@ export default function EmployerOnboarding() {
               </>
             ) : (
               <p style={{ fontSize: '14px', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto', lineHeight: '1.7' }}>
-                Your signed agreement is under review by our team. This typically takes 1–2 business days. You'll receive an email confirmation once approved.
+                Your signed agreement is in and our team is completing the final review. You'll receive an email confirmation once approved.
               </p>
             )}
           </div>

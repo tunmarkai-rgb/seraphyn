@@ -12,7 +12,7 @@ export default function NurseDetail() {
   const [empProfile, setEmpProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const isFullAccess = empProfile?.onboarding_stage >= 3 && empProfile?.approved_at
+  const isFullAccess = empProfile?.onboarding_stage === 'approved' && empProfile?.approved_at
 
   useEffect(() => {
     loadNurse()
@@ -86,7 +86,7 @@ export default function NurseDetail() {
           <div style={{ background: 'rgba(200,169,110,0.1)', border: '1px solid rgba(200,169,110,0.3)', borderRadius: '4px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span>🔒</span>
             <p style={{ fontSize: '13px', color: 'var(--warm-gold)' }}>
-              Full profile visible after contract approval.{' '}
+              Full profile visible after final employer approval.{' '}
               <a href="/employer/onboarding" style={{ color: 'var(--warm-gold)', textDecoration: 'underline' }}>Complete setup →</a>
             </p>
           </div>

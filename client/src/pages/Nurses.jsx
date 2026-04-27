@@ -13,7 +13,7 @@ export default function NurseDirectory() {
   const [empProfile, setEmpProfile] = useState(null)
   const [filters, setFilters] = useState({ specialty: '', availability: '', experience: '' })
 
-  const isFullAccess = empProfile?.onboarding_stage >= 3 && empProfile?.approved_at
+  const isFullAccess = empProfile?.onboarding_stage === 'approved' && empProfile?.approved_at
 
   useEffect(() => {
     if (user && profile?.role === 'employer') {
@@ -84,7 +84,7 @@ export default function NurseDirectory() {
           {!isFullAccess && profile?.role === 'employer' && (
             <div style={{ marginTop: '20px', display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: 'rgba(200,169,110,0.15)', border: '1px solid rgba(200,169,110,0.3)', borderRadius: '4px' }}>
               <span style={{ fontSize: '14px' }}>🔒</span>
-              <p style={{ fontSize: '12px', color: 'var(--warm-gold)' }}>Full profiles visible after contract approval. <a href="/employer/onboarding" style={{ color: 'var(--warm-gold)', textDecoration: 'underline' }}>Complete setup →</a></p>
+              <p style={{ fontSize: '12px', color: 'var(--warm-gold)' }}>Full profiles unlock after final employer approval. <a href="/employer/onboarding" style={{ color: 'var(--warm-gold)', textDecoration: 'underline' }}>Complete setup →</a></p>
             </div>
           )}
         </div>
@@ -181,7 +181,7 @@ export default function NurseDirectory() {
                       )}
                       {!isFullAccess && (
                         <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: '10px' }}>
-                          🔒 Full profile unlocked after contract approval
+                          🔒 Full profile unlocked after final employer approval
                         </p>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--success)', padding: '6px 8px', background: 'rgba(45,122,79,0.06)', borderRadius: '2px', marginBottom: '10px' }}>

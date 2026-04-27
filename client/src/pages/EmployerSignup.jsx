@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { apiRequest } from '../lib/api'
 
 export default function EmployerSignup() {
   const { signUp } = useAuth()
@@ -57,8 +58,19 @@ export default function EmployerSignup() {
           contact_name: form.contactName,
           org_type: form.orgType,
           state: form.state,
-          onboarding_stage: 1,
+          onboarding_stage: 'profile',
         }, { onConflict: 'user_id' })
+
+        if (data.session?.access_token) {
+          try {
+            await apiRequest('/api/integrations/ghl/sync-self', {
+              method: 'POST',
+              accessToken: data.session.access_token
+            })
+          } catch (syncError) {
+            console.error('Employer signup GHL sync failed:', syncError.message)
+          }
+        }
       }
 
       navigate('/login?signup=employer')
@@ -95,8 +107,8 @@ export default function EmployerSignup() {
         flexDirection: 'column',
         justifyContent: 'center',
       }}>
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '48px', textDecoration: 'none' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1px solid var(--warm-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warm-gold)', fontSize: '16px' }}>✦</div>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px', textDecoration: 'none' }}>
+          <img src="/logo.png" alt="Seraphyn" style={{ height: '38px', width: 'auto', objectFit: 'contain' }} />
           <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>Seraphyn</span>
         </Link>
 

@@ -38,7 +38,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/jobs — approved employer only
 router.post('/', requireAuth, requireRole('employer'), requireApproved, async (req, res) => {
   const { data: ep } = await supabase.from('employer_profiles').select('id, onboarding_stage, approved_at').eq('user_id', req.user.id).single()
-  if (!ep || ep.onboarding_stage < 3 || !ep.approved_at) {
+  if (!ep || ep.onboarding_stage !== 'approved' || !ep.approved_at) {
     return res.status(403).json({ error: 'Complete onboarding before posting jobs' })
   }
 
@@ -98,6 +98,11 @@ router.delete('/:id', requireAuth, requireRole('employer', 'admin'), async (req,
 router.post('/:id/apply', requireAuth, requireRole('nurse'), async (req, res) => {
   const { data: np } = await supabase.from('nurse_profiles').select('id').eq('user_id', req.user.id).single()
   if (!np) return res.status(404).json({ error: 'Nurse profile not found' })
+
+  const { data: nurseUser } = await supabase.from('users').select('status').eq('id', req.user.id).single()
+  if (!nurseUser || nurseUser.status !== 'approved') {
+    return res.status(403).json({ error: 'Your account must be approved before applying to jobs' })
+  }
 
   const { data: job } = await supabase.from('jobs').select('id, employer_id, status').eq('id', req.params.id).single()
   if (!job || job.status !== 'active') return res.status(400).json({ error: 'Job is not available' })

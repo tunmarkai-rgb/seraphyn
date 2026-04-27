@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { SPECIALTIES, US_STATES } from '../lib/constants'
+import { apiRequest } from '../lib/api'
 
 export default function NurseSignup() {
   const { signUp } = useAuth()
@@ -48,6 +49,28 @@ export default function NurseSignup() {
           specialty: form.specialty,
           years_experience: expMap[form.yearsExperience] || null,
         }, { onConflict: 'user_id' })
+
+        if (data.session?.access_token) {
+          try {
+            await apiRequest('/api/integrations/ghl/sync-self', {
+              method: 'POST',
+              accessToken: data.session.access_token
+            })
+            await apiRequest('/api/integrations/events/self', {
+              method: 'POST',
+              accessToken: data.session.access_token,
+              body: {
+                event: 'nurse.signup_confirmed',
+                payload: {
+                  specialty: form.specialty,
+                  licenseState: form.licenseState
+                }
+              }
+            })
+          } catch (syncError) {
+            console.error('Nurse signup GHL sync failed:', syncError.message)
+          }
+        }
       }
 
       navigate('/login?signup=nurse')
@@ -77,15 +100,10 @@ export default function NurseSignup() {
       }}>
         <div style={{ position: 'relative', zIndex: 1 }}>
           <Link to="/" style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
+            display: 'flex', alignItems: 'center', gap: '12px',
             marginBottom: '48px', textDecoration: 'none'
           }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '50%',
-              border: '1px solid var(--warm-gold)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--warm-gold)', fontSize: '16px'
-            }}>✦</div>
+            <img src="/logo.png" alt="Seraphyn" style={{ height: '38px', width: 'auto', objectFit: 'contain' }} />
             <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>
               Seraphyn
             </span>

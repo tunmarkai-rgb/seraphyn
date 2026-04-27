@@ -1,0 +1,658 @@
+{
+  "name": "Seraphyn - Resume Parser",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seraphyn-resume-parser",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-resume-parser",
+      "name": "Resume Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OVApEipSr0aV73D8",
+          "name": "Seraphyn Shared Webhook Secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = $input.first().json;\nconst body = source.body ?? source;\nconst record = body.record ?? body.new ?? body.object ?? body;\nconst headers = source.headers ?? {};\nconst supabaseUrl = 'https://rchydpjwyfpxuexnipwk.supabase.co';\nconst bucket = record.bucket_id || record.bucket || body.bucket_id || body.bucket || '';\nconst objectPath = record.name || record.path || record.object_path || body.name || body.path || '';\nconst eventType = body.type || body.event || body.eventType || record.eventType || headers['x-supabase-event'] || headers['X-Supabase-Event'] || 'unknown';\nconst normalizedEventType = String(eventType).toUpperCase();\nconst fileName = objectPath.split('/').pop() || '';\nconst extension = (fileName.includes('.') ? fileName.split('.').pop() : '').toLowerCase();\nconst encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');\nconst publicResumeUrl = bucket && objectPath ? `${supabaseUrl}/storage/v1/object/public/${bucket}/${encodedPath}` : '';\nconst bucketPath = bucket && objectPath ? `${bucket}/${objectPath}` : objectPath;\nconst candidates = [publicResumeUrl, bucketPath, objectPath].filter(Boolean);\nconst orFilter = candidates.map((value) => `resume_url.eq.${encodeURIComponent(value)}`).join(',');\nconst lookupUrl = `${supabaseUrl}/rest/v1/nurse_profiles?select=id,user_id,first_name,last_name,specialty,license_number,license_state,years_experience,availability,shift_preference,bio,certifications,resume_url&or=(${orFilter})&limit=1`;\nconst shouldProcess = bucket === 'resumes' && ['INSERT', 'UPDATE', 'OBJECT_CREATED', 'STORAGE.OBJECT.CREATED'].includes(normalizedEventType) && ['pdf', 'rtf', 'txt'].includes(extension);\n\nreturn [{\n  json: {\n    supabaseUrl,\n    eventType,\n    bucket,\n    objectPath,\n    bucketPath,\n    fileName,\n    extension,\n    publicResumeUrl,\n    lookupUrl,\n    shouldProcess,\n    supportedExtensions: ['pdf', 'rtf', 'txt'],\n    rawRecord: record\n  }\n}];"
+      },
+      "id": "code-normalize-event",
+      "name": "Normalize Storage Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "should-process",
+              "leftValue": "={{ $json.shouldProcess }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-valid-resume-event",
+      "name": "Valid Resume Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        760,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.lookupUrl}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "http-find-profile",
+      "name": "Find Nurse Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1020,
+        320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rV6F6wsNzvSRKZkT",
+          "name": "Seraphyn Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const base = $('Normalize Storage Event').first().json;\nconst matches = $input.all().map((item) => item.json).flat().filter(Boolean);\nconst nurseProfile = matches[0] || null;\n\nreturn [{\n  json: {\n    ...base,\n    nurseProfile,\n    nurseProfileId: nurseProfile?.id || null\n  }\n}];"
+      },
+      "id": "code-select-profile",
+      "name": "Select Nurse Profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-profile",
+              "leftValue": "={{ !!$json.nurseProfileId }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-profile-found",
+      "name": "Profile Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-pdf",
+              "leftValue": "={{ $json.extension }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-pdf",
+      "name": "PDF Resume?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.publicResumeUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "http-download-pdf",
+      "name": "Download PDF Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf"
+      },
+      "id": "extract-pdf",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-rtf",
+              "leftValue": "={{ $json.extension }}",
+              "rightValue": "rtf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-rtf",
+      "name": "RTF Resume?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.publicResumeUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "http-download-rtf",
+      "name": "Download RTF Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "rtf"
+      },
+      "id": "extract-rtf",
+      "name": "Extract RTF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2460,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.publicResumeUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "http-download-txt",
+      "name": "Download TXT Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2220,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "text"
+      },
+      "id": "extract-txt",
+      "name": "Extract TXT Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2460,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const base = $('Select Nurse Profile').first().json;\nconst source = $input.first().json;\nconst rawText = source.text || source.data || source.content || source.extractedText || (Array.isArray(source.pages) ? source.pages.map((page) => page.text || page.content || '').join('\\n\\n') : '') || '';\nconst normalizedText = String(rawText).replace(/\\u0000/g, ' ').replace(/\\s+/g, ' ').trim();\nconst trimmedResumeText = normalizedText.slice(0, 18000);\n\nreturn [{\n  json: {\n    ...base,\n    extractedTextLength: normalizedText.length,\n    trimmedResumeText\n  }\n}];"
+      },
+      "id": "code-prepare-prompt",
+      "name": "Prepare Resume Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4.1-mini', input: [ { role: 'system', content: [ { type: 'input_text', text: 'You extract structured nurse resume data for Seraphyn. Return JSON only. Use null when a value is not explicit. certifications must be an array of strings. years_experience must be an integer when clearly inferable. Do not invent license numbers, specialties, states, or dates.' } ] }, { role: 'user', content: [ { type: 'input_text', text: `Existing nurse profile context:\\n${JSON.stringify($json.nurseProfile || {}, null, 2)}\\n\\nResume text:\\n${$json.trimmedResumeText}\\n\\nReturn a JSON object with these keys: full_name, first_name, last_name, email, phone, specialty, license_number, license_state, years_experience, availability, shift_preference, bio, certifications, skills, summary, confidence_notes.` } ] } ] }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "http-openai-parse",
+      "name": "OpenAI Resume Parse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2960,
+        320
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "qqPI7KpcC1ZsxOYR",
+          "name": "Seraphyn OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const base = $('Prepare Resume Prompt').first().json;\nconst payload = $input.first().json;\n\nconst maybeText = payload.output_text\n  || payload.output?.map((entry) => (entry.content || []).map((part) => part.text || '').join('\\n')).join('\\n')\n  || payload.choices?.[0]?.message?.content\n  || '';\n\nconst cleaned = String(maybeText)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```/i, '')\n  .replace(/```$/i, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  parsed = {\n    summary: null,\n    confidence_notes: `Failed to parse OpenAI JSON: ${error.message}`\n  };\n}\n\nconst profile = base.nurseProfile || {};\nconst asArray = (value) => Array.isArray(value) ? value.filter(Boolean) : [];\nconst existingCerts = asArray(profile.certifications);\nconst parsedCerts = asArray(parsed.certifications);\n\nconst updatePayload = {\n  ai_parsed_data: {\n    parsed_at: new Date().toISOString(),\n    source: 'n8n.resume_parser',\n    file_name: base.fileName,\n    file_extension: base.extension,\n    public_resume_url: base.publicResumeUrl,\n    text_length: base.extractedTextLength,\n    model: 'gpt-4.1-mini',\n    parsed\n  }\n};\n\nif (!profile.first_name && parsed.first_name) updatePayload.first_name = parsed.first_name;\nif (!profile.last_name && parsed.last_name) updatePayload.last_name = parsed.last_name;\nif (!profile.specialty && parsed.specialty) updatePayload.specialty = parsed.specialty;\nif (!profile.license_number && parsed.license_number) updatePayload.license_number = parsed.license_number;\nif (!profile.license_state && parsed.license_state) updatePayload.license_state = parsed.license_state;\nif (!profile.years_experience && Number.isInteger(parsed.years_experience)) updatePayload.years_experience = parsed.years_experience;\nif (!profile.availability && parsed.availability) updatePayload.availability = parsed.availability;\nif (!profile.shift_preference && parsed.shift_preference) updatePayload.shift_preference = parsed.shift_preference;\nif (!profile.bio && parsed.bio) updatePayload.bio = parsed.bio;\nif (!existingCerts.length && parsedCerts.length) updatePayload.certifications = parsedCerts;\n\nreturn [{\n  json: {\n    ...base,\n    parsedResume: parsed,\n    updatePayload\n  }\n}];"
+      },
+      "id": "code-build-update",
+      "name": "Build Profile Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ `${$json.supabaseUrl}/rest/v1/nurse_profiles?id=eq.${$json.nurseProfileId}` }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.updatePayload) }}",
+        "options": {}
+      },
+      "id": "http-update-profile",
+      "name": "Update Nurse Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3440,
+        320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rV6F6wsNzvSRKZkT",
+          "name": "Seraphyn Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "status",
+              "name": "status",
+              "value": "parsed",
+              "type": "string"
+            },
+            {
+              "id": "nurse-profile-id",
+              "name": "nurseProfileId",
+              "value": "={{ $('Build Profile Update').first().json.nurseProfileId }}",
+              "type": "string"
+            },
+            {
+              "id": "file-name",
+              "name": "fileName",
+              "value": "={{ $('Build Profile Update').first().json.fileName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-success",
+      "name": "Resume Parsed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3680,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Resume Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Storage Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Storage Event": {
+      "main": [
+        [
+          {
+            "node": "Valid Resume Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Resume Event?": {
+      "main": [
+        [
+          {
+            "node": "Find Nurse Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Find Nurse Profile": {
+      "main": [
+        [
+          {
+            "node": "Select Nurse Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Nurse Profile": {
+      "main": [
+        [
+          {
+            "node": "Profile Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Profile Found?": {
+      "main": [
+        [
+          {
+            "node": "PDF Resume?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "PDF Resume?": {
+      "main": [
+        [
+          {
+            "node": "Download PDF Resume",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RTF Resume?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF Resume": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Resume Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RTF Resume?": {
+      "main": [
+        [
+          {
+            "node": "Download RTF Resume",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download TXT Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download RTF Resume": {
+      "main": [
+        [
+          {
+            "node": "Extract RTF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract RTF Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Resume Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download TXT Resume": {
+      "main": [
+        [
+          {
+            "node": "Extract TXT Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract TXT Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Resume Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Resume Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Resume Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Resume Parse": {
+      "main": [
+        [
+          {
+            "node": "Build Profile Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Profile Update": {
+      "main": [
+        [
+          {
+            "node": "Update Nurse Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Nurse Profile": {
+      "main": [
+        [
+          {
+            "node": "Resume Parsed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

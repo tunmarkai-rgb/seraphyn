@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
 
@@ -9,6 +10,7 @@ export default function AdminEmployers() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [expanded, setExpanded] = useState(null)
+  const [feedback, setFeedback] = useState('')
 
   const employers = filter === 'all' ? allEmployers : allEmployers.filter(e => e.users?.status === filter)
 
@@ -18,21 +20,24 @@ export default function AdminEmployers() {
     setLoading(true)
     const { data } = await supabase
       .from('employer_profiles')
-      .select('*, users!inner(id, email, status, full_name, created_at)')
+      .select('*, users!inner(id, email, status, full_name, created_at), contracts(signed_url, status, signed_at, sent_at)')
       .order('created_at', { ascending: false })
     setAllEmployers(data || [])
     setLoading(false)
   }
 
-  async function approve(userId, empId) {
+  async function approve(empId) {
     setActionLoading(empId)
-    await supabase.from('users').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', userId)
-    await supabase.from('employer_profiles').update({
-      approved_at: new Date().toISOString(),
-      onboarding_stage: 3
-    }).eq('id', empId)
-    await loadEmployers()
-    setActionLoading(null)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/employers/${empId}/approve`, { method: 'PUT' })
+      await loadEmployers()
+      setFeedback('Employer approved successfully.')
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   async function reject(userId, empId) {
@@ -49,10 +54,43 @@ export default function AdminEmployers() {
     setActionLoading(null)
   }
 
+  async function sendContract(empId) {
+    setActionLoading(empId)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/employers/${empId}/send-contract`, { method: 'POST' })
+      await loadEmployers()
+      setFeedback('Contract sent successfully.')
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function syncContact(empId) {
+    setActionLoading(empId)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/employers/${empId}/sync-contact`, { method: 'POST' })
+      await loadEmployers()
+      setFeedback('Employer contact synced to GHL.')
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const counts = allEmployers.reduce((acc, e) => { acc[e.users?.status] = (acc[e.users?.status] || 0) + 1; return acc }, {})
 
   return (
     <AdminLayout title="Employer Management">
+      {feedback && (
+        <div style={{ marginBottom: '16px', padding: '12px 16px', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--deep-navy)', fontSize: '13px' }}>
+          {feedback}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
         {[['all','All'],['pending','Pending'],['approved','Approved'],['rejected','Rejected'],['suspended','Suspended']].map(([val, label]) => (
           <button key={val} onClick={() => setFilter(val)}
@@ -87,8 +125,7 @@ export default function AdminEmployers() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Stage {emp.onboarding_stage || 1}/3</span>
-                    {emp.contract_signed && <span style={{ fontSize: '11px', color: 'var(--success)' }}>✓ Contract Signed</span>}
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Stage {({ profile: 1, contract: 2, approved: 3 })[emp.onboarding_stage] || 1}/3</span>
                     <StatusBadge status={status} />
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{isExp ? '▲' : '▼'}</span>
                   </div>
@@ -103,7 +140,6 @@ export default function AdminEmployers() {
                         ['Email', emp.users?.email],
                         ['Location', `${emp.city}, ${emp.state}`],
                         ['Beds', emp.bed_count || '—'],
-                        ['Contract Signed', emp.contract_signed ? `Yes — ${emp.contract_signed_at ? new Date(emp.contract_signed_at).toLocaleDateString() : ''}` : 'No'],
                       ].map(([label, val]) => (
                         <div key={label}>
                           <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '3px' }}>{label}</p>
@@ -117,23 +153,50 @@ export default function AdminEmployers() {
                         <p style={{ fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>{emp.description}</p>
                       </div>
                     )}
-                    {emp.signed_url && (
+                    <div style={{ marginBottom: '16px', padding: '12px', background: 'var(--warm-white)', borderRadius: '4px' }}>
+                      <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Contract</p>
+                      <p style={{ fontSize: '13px', color: 'var(--deep-navy)', marginBottom: '4px' }}>
+                        {emp.contract_signed
+                          ? 'Signed'
+                          : emp.contracts?.[0]?.status === 'sent'
+                            ? 'Sent - awaiting signature'
+                            : 'Not sent yet'}
+                      </p>
+                      {emp.contracts?.[0]?.sent_at && (
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Sent {new Date(emp.contracts[0].sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      )}
+                      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                        {emp.ghl_contact_id ? 'GHL contact synced' : 'GHL contact not synced yet'}
+                      </p>
+                    </div>
+                    {emp.contracts?.[0]?.signed_url && (
                       <div style={{ marginBottom: '16px' }}>
-                        <a href={emp.signed_url} target="_blank" rel="noreferrer"
+                        <a href={emp.contracts[0].signed_url} target="_blank" rel="noreferrer"
                           style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                           📄 View Signed Contract
                         </a>
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {status !== 'approved' && emp.contract_signed && (
-                        <button onClick={() => approve(emp.users?.id, emp.id)} disabled={actionLoading === emp.id}
+                      {!emp.contract_signed && status !== 'approved' && (
+                        <button onClick={() => syncContact(emp.id)} disabled={actionLoading === emp.id}
+                          style={{ padding: '8px 16px', background: 'white', color: 'var(--deep-navy)', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                          {actionLoading === emp.id ? '...' : emp.ghl_contact_id ? 'Re-sync GHL Contact' : 'Sync GHL Contact'}
+                        </button>
+                      )}
+                      {!emp.contract_signed && status !== 'approved' && (
+                        <button onClick={() => sendContract(emp.id)} disabled={actionLoading === emp.id}
+                          style={{ padding: '8px 16px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                          {actionLoading === emp.id ? '...' : emp.contracts?.[0]?.status === 'sent' ? 'Resend Contract' : 'Send Contract'}
+                        </button>
+                      )}
+                      {status !== 'approved' && (
+                        <button onClick={() => approve(emp.id)} disabled={actionLoading === emp.id || !emp.contract_signed}
                           style={{ padding: '8px 16px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
                           {actionLoading === emp.id ? '...' : '✓ Approve'}
                         </button>
-                      )}
-                      {status !== 'approved' && !emp.contract_signed && (
-                        <span style={{ fontSize: '12px', color: 'var(--warm-gold)', padding: '8px 0' }}>⏳ Awaiting contract signature before approval</span>
                       )}
                       {status !== 'rejected' && status !== 'approved' && (
                         <button onClick={() => reject(emp.users?.id, emp.id)} disabled={actionLoading === emp.id}
@@ -146,6 +209,11 @@ export default function AdminEmployers() {
                           style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
                           Suspend
                         </button>
+                      )}
+                      {!emp.contract_signed && status !== 'approved' && (
+                        <p style={{ width: '100%', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Approval unlocks after the signed agreement webhook comes back from GHL.
+                        </p>
                       )}
                     </div>
                   </div>

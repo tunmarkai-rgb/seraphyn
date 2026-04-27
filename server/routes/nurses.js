@@ -20,7 +20,7 @@ router.get('/', requireAuth, requireRole('admin', 'employer'), async (req, res) 
       .eq('user_id', req.user.id)
       .single()
 
-    if (ep?.onboarding_stage >= 3 && ep?.approved_at) {
+    if (ep?.onboarding_stage === 'approved' && ep?.approved_at) {
       select = 'id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at'
     }
   }
@@ -31,6 +31,18 @@ router.get('/', requireAuth, requireRole('admin', 'employer'), async (req, res) 
     .not('approved_at', 'is', null)
     .order('approved_at', { ascending: false })
 
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// GET /api/nurses/featured — public, anonymised preview for homepage
+router.get('/featured', async (req, res) => {
+  const { data, error } = await supabase
+    .from('nurse_profiles')
+    .select('id, first_name, last_name, specialty, years_experience, certifications, shift_preference')
+    .not('approved_at', 'is', null)
+    .order('approved_at', { ascending: false })
+    .limit(3)
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
@@ -46,7 +58,7 @@ router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, re
       .select('onboarding_stage, approved_at')
       .eq('user_id', req.user.id)
       .single()
-    if (ep?.onboarding_stage >= 3 && ep?.approved_at) {
+    if (ep?.onboarding_stage === 'approved' && ep?.approved_at) {
       select = 'id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url'
     }
   }

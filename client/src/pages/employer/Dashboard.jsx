@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 
@@ -20,6 +21,7 @@ export default function EmployerDashboard() {
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
   const [updatingApp, setUpdatingApp] = useState(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (user) loadData()
@@ -65,12 +67,18 @@ export default function EmployerDashboard() {
 
   async function updateAppStatus(appId, newStatus) {
     setUpdatingApp(appId)
-    await supabase
-      .from('applications')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', appId)
-    setApplications(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus } : a))
-    setUpdatingApp(null)
+    setError('')
+    try {
+      const updated = await apiRequest(`/api/employers/applications/${appId}/status`, {
+        method: 'PUT',
+        body: { status: newStatus }
+      })
+      setApplications(prev => prev.map(a => a.id === appId ? { ...a, ...updated } : a))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setUpdatingApp(null)
+    }
   }
 
   async function toggleJobStatus(jobId, currentStatus) {
@@ -90,7 +98,7 @@ export default function EmployerDashboard() {
     )
   }
 
-  if (empProfile && empProfile.onboarding_stage < 3) {
+  if (empProfile && empProfile.onboarding_stage !== 'approved') {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--warm-white)', fontFamily: 'DM Sans, sans-serif' }}>
         <Navbar />
@@ -119,6 +127,11 @@ export default function EmployerDashboard() {
     <div style={{ minHeight: '100vh', background: 'var(--warm-white)', fontFamily: 'DM Sans, sans-serif' }}>
       <Navbar />
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '100px 24px 60px' }}>
+        {error && (
+          <div style={{ marginBottom: '20px', padding: '12px 16px', background: 'white', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '4px', color: '#B43C3C', fontSize: '13px' }}>
+            {error}
+          </div>
+        )}
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '40px' }}>
