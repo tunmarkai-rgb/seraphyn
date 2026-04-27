@@ -12,7 +12,7 @@ Two-sided healthcare staffing marketplace.
 
 - Client: Kundayi Washaya (`kundayiw@gmail.com`)
 - Dev: Abdulrasheed Olatunji
-- Portal: `https://seraphyn.vercel.app`
+- Portal: `https://staffing.seraphyncare.com`
 - Primary domain target: `staffing.seraphyncare.com`
 - GHL: `consult.seraphyncare.com`
 - Supabase: `https://rchydpjwyfpxuexnipwk.supabase.co`
@@ -38,10 +38,11 @@ Two-sided healthcare staffing marketplace.
 1. Payments stay offline in M2. Do not wire Stripe or GHL payment links into the portal.
 2. Contracts are sent and signed through GHL Documents.
 3. The portal remains the source of truth for app state, access control, and onboarding status.
-4. n8n owns async automation: resume parsing, job matching, approval notifications, and contact sync.
-5. Canonical employer onboarding states are `profile`, `contract`, and `approved`.
-6. Service-role Supabase credentials stay server-only.
-7. Build must pass before closeout: `npm run build` in `client/`.
+4. n8n owns async automation: resume parsing, job matching, screening, and contact sync orchestration.
+5. GHL owns contact-facing notification delivery for approved business email/SMS sequences in M2.
+6. Canonical employer onboarding states are `profile`, `contract`, and `approved`.
+7. Supabase secret credentials stay server-only; Supabase publishable key stays frontend-safe only.
+8. Build must pass before closeout: `npm run build` in `client/`.
 
 ---
 
@@ -78,8 +79,8 @@ seraphyn/
 
 ```env
 VITE_SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
-VITE_SUPABASE_ANON_KEY=[publishable key]
-VITE_API_URL=http://localhost:5000
+VITE_SUPABASE_PUBLISHABLE_KEY=[publishable key]
+VITE_API_URL=https://api.seraphyncare.com
 ```
 
 ### server/.env
@@ -87,21 +88,24 @@ VITE_API_URL=http://localhost:5000
 ```env
 PORT=5000
 SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
-SUPABASE_SERVICE_KEY=[secret key]
-SUPABASE_ANON_KEY=[publishable key]
+SUPABASE_SECRET_KEY=[secret key]
 JWT_SECRET=seraphyn_super_secret_jwt_2026
-CLIENT_URL=http://localhost:5173
+CLIENT_URL=https://staffing.seraphyncare.com
+CLIENT_URLS=https://staffing.seraphyncare.com
+CORS_ORIGINS=https://staffing.seraphyncare.com
 
 GHL_API_KEY=[private integration token]
 GHL_LOCATION_ID=[ghl location id]
 GHL_DOCUMENT_TEMPLATE_ID=[ghl staffing agreement template id]
 GHL_WEBHOOK_SECRET=[shared secret for /api/webhooks/ghl]
-GHL_WORKFLOW_WEBHOOK_URL=[optional shared inbound webhook for portal milestone events]
-GHL_WORKFLOW_WEBHOOK_SECRET=[optional shared secret for portal milestone webhooks]
+GHL_WORKFLOW_WEBHOOK_URL=[recommended shared inbound GHL workflow webhook for fastest launch]
+GHL_WORKFLOW_WEBHOOK_SECRET=[shared secret for portal milestone webhooks]
 
 OPENAI_API_KEY=[openai key for n8n]
 N8N_WEBHOOK_URL=[optional inbound event webhook from portal to n8n]
 N8N_WEBHOOK_SECRET=[shared secret for portal -> n8n webhook]
+CLIENT_URLS=[optional comma-separated frontend origins for backend CORS]
+CORS_ORIGINS=[optional comma-separated override for allowed frontend origins]
 ```
 
 ---
@@ -153,7 +157,7 @@ These flows are now part of M2:
 1. Resume Parser
 2. Job Matching
 3. Admin Credential Screening
-4. Approval Notification Emails
+4. Approval Notification Triggers
 5. GHL Contact Sync
 
 Supabase webhooks should trigger the core n8n flows. Optional portal-to-n8n event forwarding can use `N8N_WEBHOOK_URL`.
@@ -162,6 +166,7 @@ Current production n8n state:
 - `Seraphyn - Portal Events Inbound` is live in production as workflow `xh5ruX7lGR9m8vIE`
 - `Seraphyn - Resume Parser` has been exported to production as workflow `xFl2h0aUGWqK7Zsb` and remains inactive until a real OpenAI API key is set
 - native n8n credentials now hold the shared webhook secret and Supabase auth, so workflow JSON exports should not embed credentials directly
+- GHL is the approved owner for contact-facing notifications in M2; n8n remains the orchestrator behind those triggers
 
 ---
 
@@ -190,7 +195,7 @@ Current production n8n state:
 - GHL contact sync must exist before contract send can succeed
 - Signed-contract matching currently reuses `contracts.docuseal_submission_id` as a legacy storage field for the GHL document reference until a schema cleanup happens
 - Admin UI still uses a mix of Supabase-direct and API-driven actions; approval and contract actions should prefer the server routes
-- Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; per-event overrides can be configured with `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
+- Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides available later via `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
 - Resume parser production activation is blocked until the real `OPENAI_API_KEY` is loaded into the native n8n `Seraphyn OpenAI API` credential
 
 ---

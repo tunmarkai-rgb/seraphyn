@@ -62,7 +62,8 @@ These are the portal events that must fire a webhook to GHL workflows.
 Implementation note:
 - The portal now dispatches milestone events through `server/lib/portal-events.js`.
 - Events can fan out to n8n and to GHL workflow inbound webhook URLs at the same time.
-- Use `GHL_WORKFLOW_WEBHOOK_URL` for one shared inbound GHL workflow webhook, or per-event overrides like `GHL_WORKFLOW_WEBHOOK_URL_NURSE_SIGNUP_CONFIRMED`.
+- Approved M2 direction: GHL owns contact-facing notifications; n8n remains the orchestrator and AI layer.
+- Fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides like `GHL_WORKFLOW_WEBHOOK_URL_NURSE_SIGNUP_CONFIRMED` available later.
 
 | Portal Event | Webhook Name | GHL Workflow Triggered |
 |---|---|---|
@@ -175,7 +176,7 @@ Implementation note:
 [5]  ACTION: Send SMS —
              "Hi {{contact.first_name}}, you're one step away from 
              accessing nursing opportunities near you. 
-             Create your free profile here: https://seraphyn.vercel.app/nurse/signup
+             Create your free profile here: https://staffing.seraphyncare.com/nurse/signup
              Reply STOP to opt out."
 
 [6]  WAIT: 23 hours
@@ -189,7 +190,7 @@ Implementation note:
              Body: "We noticed you checked out the Seraphyn platform.
              Your profile takes less than 5 minutes and puts you 
              in front of facilities looking for your specialty.
-             [Create My Profile →](https://seraphyn.vercel.app/nurse/signup)"
+             [Create My Profile →](https://staffing.seraphyncare.com/nurse/signup)"
 
 [9]  END
 ```
@@ -221,7 +222,7 @@ Implementation note:
              "New nurse profile submitted — review to qualify:
               {{contact.first_name}} {{contact.last_name}}
               Specialty: {{contact.specialty}}
-              [View in Portal →](https://seraphyn.vercel.app/admin)"
+              [View in Portal →](https://staffing.seraphyncare.com/admin)"
 
 [6]  END
 ```
@@ -250,7 +251,7 @@ Implementation note:
 [5]  ACTION: Send Internal Notification to Seraphyn Team —
              "Nurse documents uploaded — ready for credential verification:
               {{contact.first_name}} {{contact.last_name}}
-              [View in Portal →](https://seraphyn.vercel.app/admin)"
+              [View in Portal →](https://staffing.seraphyncare.com/admin)"
 
 [6]  END
 ```
@@ -522,13 +523,13 @@ Implementation note:
              your organization is now fully approved on Seraphyn. 
              You can start posting jobs and connecting with 
              qualified nurses right away.
-             [Go to My Dashboard →](https://seraphyn.vercel.app)"
+             [Go to My Dashboard →](https://staffing.seraphyncare.com)"
 
 [5]  ACTION: Send Internal Notification to Seraphyn Team —
              "New employer approved — assign account manager:
               {{contact.company_name}}
               Contact: {{contact.first_name}} {{contact.last_name}}
-              [View in Portal →](https://seraphyn.vercel.app/admin)"
+              [View in Portal →](https://staffing.seraphyncare.com/admin)"
 
 [6]  END
 ```
@@ -625,5 +626,3 @@ Implementation note:
 |---|---|
 | Admin notification email | What email should internal notifications go to? |
 | Inactivity automation | Confirm 90-day threshold for marking nurse Inactive is correct |
-| ELS-01 email content | Need copy for 6 email/SMS touchpoints (D01, D03, D05, D08, D11, D15) |
-| NRS-01 email content | Need copy for 6 email/SMS touchpoints (D01, D02, D04, D07, D10, D14) |

@@ -13,7 +13,7 @@ Recommended ownership split:
 
 - Portal server: auth, admin actions, GHL contract webhooks, access control
 - Supabase webhooks: trigger most data-change automations
-- n8n: OpenAI processing, contact sync, notifications, matching, and downstream orchestration
+- n8n: OpenAI processing, contact sync, matching, screening, and downstream orchestration
 
 Current implementation note:
 - The portal now includes a direct server-side GHL contact sync fallback for nurse/employer records.
@@ -78,8 +78,8 @@ Trigger:
 
 Actions:
 - Branch by role
-- Notify nurse or employer
-- Include dashboard link and next-step messaging
+- Trigger the right downstream notification path
+- Hand off delivery to GHL with approved copy and business sequencing
 
 ### 5. GHL Contact Sync
 
@@ -143,7 +143,9 @@ Current native credentials already created in production:
 - `Seraphyn Supabase API` (`supabaseApi`)
 - `Seraphyn OpenAI API` (`openAiApi`)
 
-If contact-facing email is handled from GHL, keep n8n focused on orchestration and data writes.
+Approved delivery split:
+- GHL owns contact-facing notification delivery in M2
+- n8n stays focused on orchestration, AI work, and data writes
 
 ---
 

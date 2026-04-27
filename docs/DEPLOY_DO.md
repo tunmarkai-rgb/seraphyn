@@ -106,8 +106,10 @@ Paste this and fill any missing values:
 
 ```env
 SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
-SUPABASE_SERVICE_KEY=your_supabase_service_key
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
 CLIENT_URL=https://staffing.seraphyncare.com
+CLIENT_URLS=https://staffing.seraphyncare.com
+CORS_ORIGINS=https://staffing.seraphyncare.com
 PORT=5000
 
 GHL_API_KEY=your_ghl_private_integration_token
@@ -163,7 +165,7 @@ Ctrl + C
 
 ```bash
 cd /var/www/seraphyn/server
-pm2 start index.js --name seraphyn-api
+pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
@@ -184,6 +186,7 @@ pm2 logs seraphyn-api
 pm2 restart seraphyn-api
 pm2 stop seraphyn-api
 pm2 delete seraphyn-api
+pm2 show seraphyn-api
 ```
 
 ## Step 10. Configure Nginx
@@ -194,7 +197,7 @@ Create the site config:
 nano /etc/nginx/sites-available/seraphyn-api
 ```
 
-Paste:
+Paste the checked-in template from [deploy/nginx/seraphyn-api.conf](../deploy/nginx/seraphyn-api.conf) or use:
 
 ```nginx
 server {
@@ -237,6 +240,8 @@ Then verify:
 
 ```bash
 curl https://api.seraphyncare.com/api/health
+curl https://api.seraphyncare.com/api/ready
+curl https://api.seraphyncare.com/healthz
 ```
 
 ## Step 12. Check Firewall
@@ -258,7 +263,7 @@ In your Vercel project for the frontend, set:
 
 ```env
 VITE_SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_T5lKSQrDlWUCXFj_l2a9kQ_LFrRaKSi
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_T5lKSQrDlWUCXFj_l2a9kQ_LFrRaKSi
 VITE_API_URL=https://api.seraphyncare.com
 ```
 
@@ -276,6 +281,7 @@ Expected result:
 
 - status is `ok`
 - database says `connected`
+- readiness reports required envs are present
 
 ## Step 15. Use The Real GHL Webhook URL
 
@@ -291,18 +297,20 @@ Use this header in GHL:
 x-ghl-webhook-secret: your_ghl_webhook_secret
 ```
 
-For optional portal milestone fan-out into GHL workflows, configure either:
+For optional portal milestone fan-out into GHL workflows, fastest launch is:
 
-- one shared inbound workflow webhook URL in `GHL_WORKFLOW_WEBHOOK_URL`, or
-- specific per-event URLs like:
-  - `GHL_WORKFLOW_WEBHOOK_URL_NURSE_SIGNUP_CONFIRMED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_NURSE_DOCUMENT_UPLOADED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_SIGNUP_CONFIRMED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_APPROVED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_CONTRACT_SENT`
-  - `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_CONTRACT_SIGNED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_APPLICATION_INTERVIEW_SCHEDULED`
-  - `GHL_WORKFLOW_WEBHOOK_URL_APPLICATION_HIRED`
+- one shared inbound workflow webhook URL in `GHL_WORKFLOW_WEBHOOK_URL`
+
+Per-event split remains available later if needed:
+
+- `GHL_WORKFLOW_WEBHOOK_URL_NURSE_SIGNUP_CONFIRMED`
+- `GHL_WORKFLOW_WEBHOOK_URL_NURSE_DOCUMENT_UPLOADED`
+- `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_SIGNUP_CONFIRMED`
+- `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_APPROVED`
+- `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_CONTRACT_SENT`
+- `GHL_WORKFLOW_WEBHOOK_URL_EMPLOYER_CONTRACT_SIGNED`
+- `GHL_WORKFLOW_WEBHOOK_URL_APPLICATION_INTERVIEW_SCHEDULED`
+- `GHL_WORKFLOW_WEBHOOK_URL_APPLICATION_HIRED`
 
 If you use a shared secret for those workflow webhooks, set:
 
@@ -353,6 +361,13 @@ Check env file:
 
 ```bash
 cat /var/www/seraphyn/.env
+```
+
+Check readiness separately:
+
+```bash
+curl http://localhost:5000/api/ready
+curl http://localhost:5000/healthz
 ```
 
 ### Nginx fails

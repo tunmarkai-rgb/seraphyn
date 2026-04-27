@@ -56,7 +56,7 @@ Trigger:
 
 Needs:
 - `OPENAI_API_KEY`
-- Supabase service-role access inside n8n
+- Supabase secret-key access inside n8n
 
 Primary writes:
 - `public.nurse_profiles.ai_parsed_data`
@@ -80,7 +80,7 @@ Trigger:
 
 Needs:
 - `OPENAI_API_KEY`
-- Supabase service-role access inside n8n
+- Supabase secret-key access inside n8n
 
 Primary writes:
 - `public.nurse_profiles.ai_job_matches`
@@ -92,7 +92,7 @@ Trigger:
 
 Needs:
 - `OPENAI_API_KEY`
-- Supabase service-role access inside n8n
+- Supabase secret-key access inside n8n
 
 Primary writes:
 - `public.applications.admin_notes`
@@ -104,9 +104,11 @@ Trigger:
 - optional Supabase DB webhook on `public.users.status`
 
 Needs:
-- chosen delivery path
-  - GHL workflow follow-up, or
-  - n8n email/SMS provider
+- GHL workflow follow-up using approved business copy
+
+Delivery decision:
+- GHL is the approved owner for contact-facing notifications in M2
+- n8n can still trigger and orchestrate the right downstream GHL path
 
 ### 5. GHL Contact Sync
 
@@ -118,7 +120,7 @@ Current fallback:
 
 Needs if moved fully into n8n:
 - GHL API token
-- Supabase service-role access
+- Supabase secret-key access
 
 ## Supabase Webhook Targets To Create Later
 
