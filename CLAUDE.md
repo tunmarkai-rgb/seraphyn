@@ -29,7 +29,7 @@ Two-sided healthcare staffing marketplace.
 | CRM + Contracts | GoHighLevel + GHL Documents | M2 active |
 | AI Automation | n8n + OpenAI | M2 active |
 | Payments | Offline only | M2 active |
-| Hosting | Vercel (client) + Hostinger VPS/server target | Mixed |
+| Hosting | Vercel (frontend) + DigitalOcean droplet (backend) + Docker/Caddy (n8n + public proxy) | Live |
 
 ---
 
@@ -88,7 +88,7 @@ VITE_API_URL=https://api.seraphyncare.com
 ```env
 PORT=5000
 SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
-SUPABASE_SECRET_KEY=[secret key]
+SUPABASE_SERVICE_KEY=[service role key]
 JWT_SECRET=seraphyn_super_secret_jwt_2026
 CLIENT_URL=https://staffing.seraphyncare.com
 CLIENT_URLS=https://staffing.seraphyncare.com
@@ -107,6 +107,10 @@ N8N_WEBHOOK_SECRET=[shared secret for portal -> n8n webhook]
 CLIENT_URLS=[optional comma-separated frontend origins for backend CORS]
 CORS_ORIGINS=[optional comma-separated override for allowed frontend origins]
 ```
+
+Notes:
+- The backend accepts either `SUPABASE_SERVICE_KEY` or `SUPABASE_SECRET_KEY`.
+- On the current DigitalOcean production droplet, public routing is handled by the existing Docker/Caddy stack, not by Nginx.
 
 ---
 

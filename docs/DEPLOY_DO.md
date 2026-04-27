@@ -2,6 +2,13 @@
 
 This guide deploys the Seraphyn backend to your existing DigitalOcean Droplet while keeping the frontend on Vercel.
 
+This document reflects the current production shape:
+
+- backend process runs on the host with PM2 on port `5000`
+- n8n already runs on the droplet in Docker
+- public HTTP/HTTPS routing is handled by the existing Docker `caddy` container
+- this means you should not add a parallel Nginx site for `api.seraphyncare.com` on this droplet unless you intentionally redesign the stack
+
 ## Final Architecture
 
 - Frontend: `https://staffing.seraphyncare.com`
@@ -44,13 +51,13 @@ If you use a non-root sudo user:
 ssh YOUR_USER@YOUR_DROPLET_IP
 ```
 
-## Step 3. Install Node, Nginx, Git, PM2
+## Step 3. Install Node, Git, PM2
 
 Assuming Ubuntu:
 
 ```bash
 apt update
-apt install -y nginx git curl
+apt install -y git curl
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
 npm install -g pm2
@@ -62,7 +69,6 @@ Verify:
 node -v
 npm -v
 pm2 -v
-nginx -v
 ```
 
 ## Step 4. Add Swap
@@ -189,52 +195,70 @@ pm2 delete seraphyn-api
 pm2 show seraphyn-api
 ```
 
-## Step 10. Configure Nginx
+## Step 10. Configure Caddy For The API Domain
 
-Create the site config:
+This droplet already uses Docker + Caddy for public traffic. Update the existing Caddy config instead of creating a new Nginx site.
+
+Current live files:
 
 ```bash
-nano /etc/nginx/sites-available/seraphyn-api
+/opt/n8n-docker-caddy/docker-compose.yml
+/opt/n8n-docker-caddy/caddy_config/Caddyfile
 ```
 
-Paste the checked-in template from [deploy/nginx/seraphyn-api.conf](../deploy/nginx/seraphyn-api.conf) or use:
+Create backups first:
 
-```nginx
-server {
-    listen 80;
-    server_name api.seraphyncare.com;
+```bash
+cp /opt/n8n-docker-caddy/docker-compose.yml /opt/n8n-docker-caddy/docker-compose.yml.bak-seraphyn
+cp /opt/n8n-docker-caddy/caddy_config/Caddyfile /opt/n8n-docker-caddy/caddy_config/Caddyfile.bak-seraphyn
+```
 
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+Ensure the Caddy service can resolve the host gateway:
+
+```yaml
+services:
+  caddy:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Then add this site block to `/opt/n8n-docker-caddy/caddy_config/Caddyfile`:
+
+```caddy
+api.seraphyncare.com {
+    reverse_proxy host.docker.internal:5000
 }
 ```
 
-Enable it:
+Restart the existing stack:
 
 ```bash
-ln -s /etc/nginx/sites-available/seraphyn-api /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
+cd /opt/n8n-docker-caddy
+docker compose up -d
 ```
 
-Test over HTTP:
+Because UFW is enabled on this droplet, allow Docker bridge networks to reach port `5000` internally:
 
 ```bash
-curl http://api.seraphyncare.com/api/health
+ufw allow from 172.17.0.0/16 to any port 5000 proto tcp
+ufw allow from 172.18.0.0/16 to any port 5000 proto tcp
 ```
 
-## Step 11. Add HTTPS With Certbot
+Test through Caddy before DNS is live:
 
 ```bash
-apt install -y certbot python3-certbot-nginx
-certbot --nginx -d api.seraphyncare.com
+curl -I -H 'Host: api.seraphyncare.com' http://127.0.0.1/healthz
 ```
+
+Expected result: `308 Permanent Redirect` to `https://api.seraphyncare.com/...`
+
+## Step 11. HTTPS Handling
+
+Caddy will obtain and renew the TLS certificate automatically after:
+
+- the Squarespace `A` record for `api.seraphyncare.com` points to the droplet IP
+- DNS has propagated
+- ports `80` and `443` are reachable
 
 Then verify:
 
@@ -250,12 +274,14 @@ If you use UFW:
 
 ```bash
 ufw allow OpenSSH
-ufw allow 'Nginx Full'
 ufw enable
 ufw status
 ```
 
-If UFW is already active, just confirm ports 80 and 443 are open.
+If UFW is already active, confirm:
+
+- ports `80` and `443` are open publicly
+- port `5000` is only open to the Docker bridge ranges used by Caddy
 
 ## Step 13. Update Vercel Frontend Environment Variables
 
@@ -346,6 +372,11 @@ pm2 logs seraphyn-api
 
 If frontend code changed too, redeploy on Vercel.
 
+Important:
+
+- if local backend files were changed but not pushed to GitHub yet, push them first before relying on `git pull`
+- if the Caddy config changes, restart it with `cd /opt/n8n-docker-caddy && docker compose up -d`
+
 ## Troubleshooting
 
 ### Health endpoint fails
@@ -370,12 +401,13 @@ curl http://localhost:5000/api/ready
 curl http://localhost:5000/healthz
 ```
 
-### Nginx fails
+### Caddy route fails
 
 ```bash
-nginx -t
-systemctl status nginx
-journalctl -u nginx --no-pager -n 100
+cd /opt/n8n-docker-caddy
+docker compose ps
+docker logs n8n-docker-caddy-caddy-1 --tail 100
+sed -n '1,220p' /opt/n8n-docker-caddy/caddy_config/Caddyfile
 ```
 
 ### Domain not resolving
@@ -390,9 +422,11 @@ dig api.seraphyncare.com
 Likely causes:
 
 - DNS not ready
-- Nginx not enabled
+- Caddy config not updated
+- Docker `extra_hosts` entry missing for `host.docker.internal`
+- UFW blocking Docker bridge access to port `5000`
 - firewall blocking 80 or 443
-- SSL not issued yet
+- TLS certificate not issued yet because DNS is not pointed correctly
 
 ### Backend crashes from low memory
 
@@ -422,7 +456,7 @@ If you want the shortest possible command sequence after SSH:
 
 ```bash
 apt update
-apt install -y nginx git curl
+apt install -y git curl
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
 npm install -g pm2
@@ -442,7 +476,7 @@ node index.js
 Then continue with:
 
 - create `/var/www/seraphyn/.env`
-- `pm2 start index.js --name seraphyn-api`
-- configure Nginx
-- issue SSL
+- `pm2 start ecosystem.config.js`
+- configure Caddy
+- point DNS so Caddy can issue SSL
 - update Vercel env
