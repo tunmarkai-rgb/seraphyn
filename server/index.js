@@ -1,7 +1,17 @@
-require('dotenv').config()
+const fs = require('fs')
+const path = require('path')
+const dotenv = require('dotenv')
 const express = require('express')
 const cors = require('cors')
 const { getAllowedOrigins, getMissingRequiredEnv } = require('./lib/env')
+
+// Production deploys are documented with a repo-root .env, while local fallback
+// can still use server/.env when a root file is not present.
+const rootEnvPath = path.resolve(__dirname, '..', '.env')
+const serverEnvPath = path.resolve(__dirname, '.env')
+const envPath = fs.existsSync(rootEnvPath) ? rootEnvPath : serverEnvPath
+
+dotenv.config({ path: envPath })
 
 const app = express()
 const PORT = process.env.PORT || 5000
