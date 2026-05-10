@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { getAppBaseUrl, supabase } from '../lib/supabase'
 import { SPECIALTIES, US_STATES } from '../lib/constants'
 import { apiRequest } from '../lib/api'
+import BrandLogo from '../components/BrandLogo'
 
 export default function NurseSignup() {
   const { signUp } = useAuth()
@@ -34,7 +35,10 @@ export default function NurseSignup() {
         form.email,
         form.password,
         'nurse',
-        `${form.firstName} ${form.lastName}`
+        `${form.firstName} ${form.lastName}`,
+        {
+          emailRedirectTo: `${getAppBaseUrl()}/auth/confirm`
+        }
       )
       if (error) throw error
 
@@ -99,14 +103,8 @@ export default function NurseSignup() {
         overflow: 'hidden'
       }}>
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <Link to="/" style={{
-            display: 'flex', alignItems: 'center', gap: '12px',
-            marginBottom: '48px', textDecoration: 'none'
-          }}>
-            <img src="/logo.png" alt="Seraphyn" style={{ height: '38px', width: 'auto', objectFit: 'contain' }} />
-            <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>
-              Seraphyn
-            </span>
+          <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', marginBottom: '48px', textDecoration: 'none' }}>
+            <BrandLogo tone="light" size={28} showTagline={true} />
           </Link>
           <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '16px' }}>
             Nurse Portal

@@ -72,7 +72,10 @@ export default function NurseDetail() {
 
         {/* Header card */}
         <div style={{ background: 'linear-gradient(135deg, var(--deep-navy), var(--sky-blue))', borderRadius: '4px', padding: '32px', marginBottom: '20px', position: 'relative' }}>
-          <div style={{ position: 'absolute', top: '16px', right: '16px', fontSize: '9px', color: 'var(--warm-gold)', letterSpacing: '0.06em', fontWeight: '500' }}>✦ VERIFIED</div>
+          <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9px', color: 'var(--warm-gold)', letterSpacing: '0.06em', fontWeight: '500' }}>
+            <img src="/logo.png" alt="" aria-hidden="true" style={{ height: '11px', width: 'auto', objectFit: 'contain' }} />
+            VERIFIED
+          </div>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', color: 'white', background: 'rgba(255,255,255,0.12)', marginBottom: '12px' }}>
             {nurse.first_name?.[0]}{nurse.last_name?.[0]}
           </div>

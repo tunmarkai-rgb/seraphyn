@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { getAppBaseUrl, supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
 
@@ -47,12 +47,13 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signUp = async (email, password, role, fullName) => {
+  const signUp = async (email, password, role, fullName, options = {}) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role }
+        data: { full_name: fullName, role },
+        ...options
       }
     })
     return { data, error }
@@ -63,6 +64,18 @@ export function AuthProvider({ children }) {
       email,
       password
     })
+    return { data, error }
+  }
+
+  const requestPasswordReset = async (email) => {
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${getAppBaseUrl()}/auth/reset-password`
+    })
+    return { data, error }
+  }
+
+  const updatePassword = async (password) => {
+    const { data, error } = await supabase.auth.updateUser({ password })
     return { data, error }
   }
 
@@ -78,6 +91,8 @@ export function AuthProvider({ children }) {
     loading,
     signUp,
     signIn,
+    requestPasswordReset,
+    updatePassword,
     signOut,
     isNurse: profile?.role === 'nurse',
     isEmployer: profile?.role === 'employer',

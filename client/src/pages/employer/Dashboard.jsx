@@ -91,7 +91,11 @@ export default function EmployerDashboard() {
     return (
       <div style={{ minHeight: '100vh', background: 'var(--warm-white)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '28px', color: 'var(--warm-gold)', marginBottom: '12px' }}>✦</div>
+          <img
+            src="/logo.png"
+            alt="Seraphyn"
+            style={{ height: '34px', width: 'auto', marginBottom: '12px', objectFit: 'contain' }}
+          />
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', letterSpacing: '0.08em' }}>LOADING DASHBOARD</p>
         </div>
       </div>

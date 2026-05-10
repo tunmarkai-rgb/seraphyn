@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import BrandLogo from '../components/BrandLogo'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -13,6 +14,8 @@ export default function Login() {
   const [focusedField, setFocusedField] = useState(null)
 
   const justSignedUp = searchParams.get('signup')
+  const justConfirmed = searchParams.get('confirmed')
+  const justReset = searchParams.get('reset')
 
   const handle = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -92,21 +95,8 @@ export default function Login() {
 
         {/* Top: Logo */}
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
-            <img
-              src="/logo.png"
-              alt="Seraphyn"
-              style={{ height: '42px', width: 'auto', objectFit: 'contain' }}
-            />
-            <span style={{
-              fontFamily: 'Cormorant Garamond, serif',
-              fontSize: '22px',
-              color: 'var(--warm-white)',
-              fontWeight: '400',
-              letterSpacing: '0.02em',
-            }}>
-              Seraphyn
-            </span>
+          <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+            <BrandLogo tone="light" size={30} showTagline={true} />
           </Link>
         </div>
 
@@ -215,10 +205,9 @@ export default function Login() {
               <div style={{ fontSize: '12px', color: 'var(--warm-white)', fontWeight: '500' }}>{testimonial.name}</div>
               <div style={{ fontSize: '11px', color: 'rgba(245,245,240,0.45)', marginTop: '2px' }}>{testimonial.specialty}</div>
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '2px' }}>
-              {[...Array(5)].map((_, i) => (
-                <span key={i} style={{ color: 'var(--warm-gold)', fontSize: '11px' }}>★</span>
-              ))}
+            <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--warm-gold)', fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+              <img src="/logo.png" alt="" aria-hidden="true" style={{ height: '12px', width: 'auto', objectFit: 'contain' }} />
+              Verified
             </div>
           </div>
         </div>
@@ -245,13 +234,30 @@ export default function Login() {
 
           {/* Mobile logo (hidden on desktop via auth-layout) */}
           <div className="mobile-logo-only" style={{ textAlign: 'center', marginBottom: '36px', display: 'none' }}>
-            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-              <img src="/logo.png" alt="Seraphyn" style={{ height: '36px', width: 'auto' }} />
-              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', color: 'var(--deep-navy)' }}>Seraphyn</span>
+            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+              <BrandLogo tone="dark" size={26} />
             </Link>
           </div>
 
-          {justSignedUp && (
+          {justConfirmed && (
+            <div style={{
+              background: 'rgba(45,122,79,0.08)',
+              border: '1px solid rgba(45,122,79,0.25)',
+              borderRadius: '6px',
+              padding: '14px 18px',
+              marginBottom: '28px',
+              fontSize: '13px',
+              color: 'var(--success)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }}>
+              <span style={{ fontSize: '16px' }}>✓</span>
+              Email confirmed. You can sign in now.
+            </div>
+          )}
+
+          {!justConfirmed && justSignedUp && (
             <div style={{
               background: 'rgba(45,122,79,0.08)',
               border: '1px solid rgba(45,122,79,0.25)',
@@ -266,6 +272,24 @@ export default function Login() {
             }}>
               <span style={{ fontSize: '16px' }}>✓</span>
               Account created! Check your email to confirm, then sign in below.
+            </div>
+          )}
+
+          {justReset && (
+            <div style={{
+              background: 'rgba(45,122,79,0.08)',
+              border: '1px solid rgba(45,122,79,0.25)',
+              borderRadius: '6px',
+              padding: '14px 18px',
+              marginBottom: '28px',
+              fontSize: '13px',
+              color: 'var(--success)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+            }}>
+              <span style={{ fontSize: '16px' }}>✓</span>
+              Password updated. Sign in with your new password.
             </div>
           )}
 
@@ -401,6 +425,12 @@ export default function Login() {
                 )}
               </button>
             </form>
+
+            <div style={{ marginTop: '16px', textAlign: 'right' }}>
+              <Link to="/forgot-password" style={{ fontSize: '12px', color: 'var(--sky-blue)', textDecoration: 'none', fontWeight: '500' }}>
+                Forgot password?
+              </Link>
+            </div>
           </div>
 
           {/* Trust line */}

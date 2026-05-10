@@ -149,7 +149,10 @@ export default function NurseDirectory() {
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 12px 32px rgba(44,62,80,0.08)' }}
                     onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}>
                     <div style={{ padding: '20px', background: `linear-gradient(135deg, var(--deep-navy), ${COLORS[idx % COLORS.length]})`, position: 'relative' }}>
-                      <div style={{ position: 'absolute', top: '12px', right: '12px', fontSize: '9px', color: 'var(--warm-gold)', letterSpacing: '0.06em', fontWeight: '500' }}>✦ VERIFIED</div>
+                      <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9px', color: 'var(--warm-gold)', letterSpacing: '0.06em', fontWeight: '500' }}>
+                        <img src="/logo.png" alt="" aria-hidden="true" style={{ height: '11px', width: 'auto', objectFit: 'contain' }} />
+                        VERIFIED
+                      </div>
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', color: 'white', background: 'rgba(255,255,255,0.12)', marginBottom: '8px' }}>
                         {nurse.first_name?.[0]}{nurse.last_name?.[0]}
                       </div>

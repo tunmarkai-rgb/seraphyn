@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { getAppBaseUrl, supabase } from '../lib/supabase'
 import { apiRequest } from '../lib/api'
+import BrandLogo from '../components/BrandLogo'
 
 export default function EmployerSignup() {
   const { signUp } = useAuth()
@@ -46,7 +47,10 @@ export default function EmployerSignup() {
         form.email,
         form.password,
         'employer',
-        form.contactName
+        form.contactName,
+        {
+          emailRedirectTo: `${getAppBaseUrl()}/auth/confirm`
+        }
       )
       if (error) throw error
 
@@ -101,29 +105,28 @@ export default function EmployerSignup() {
     }} className="auth-layout">
       {/* Left panel */}
       <div style={{
-        background: 'linear-gradient(160deg, #2A1A4A 0%, #4A2A7A 100%)',
+        background: 'linear-gradient(160deg, #24384C 0%, #35546B 55%, #537E93 100%)',
         padding: '60px 48px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
       }}>
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '48px', textDecoration: 'none' }}>
-          <img src="/logo.png" alt="Seraphyn" style={{ height: '38px', width: 'auto', objectFit: 'contain' }} />
-          <span style={{ color: 'var(--cream)', fontFamily: 'Cormorant Garamond, serif', fontSize: '20px' }}>Seraphyn</span>
+        <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', marginBottom: '48px', textDecoration: 'none' }}>
+          <BrandLogo tone="light" size={28} showTagline={true} />
         </Link>
 
-        <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#D4A8F0', marginBottom: '16px' }}>
+        <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '16px' }}>
           Employer Portal
         </p>
         <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '42px', fontWeight: '300', color: 'var(--cream)', lineHeight: '1.15', marginBottom: '24px' }}>
-          Fill critical<br />positions with<br /><em style={{ color: '#D4A8F0', fontStyle: 'italic' }}>confidence</em>
+          Fill critical<br />positions with<br /><em style={{ color: 'var(--warm-gold)', fontStyle: 'italic' }}>confidence</em>
         </h1>
         <p style={{ color: 'rgba(245,240,232,0.6)', fontSize: '14px', fontWeight: '300', lineHeight: '1.8', marginBottom: '40px' }}>
           Access thousands of verified, credentialed nurses ready for immediate placement.
         </p>
         {['Pre-verified nurse credentials', 'Average 4.2-day fill time', 'No placement until you approve'].map((item, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-            <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '1px solid rgba(212,168,240,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#D4A8F0', flexShrink: 0 }}>✓</div>
+            <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '1px solid rgba(200,169,110,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'var(--warm-gold)', flexShrink: 0 }}>✓</div>
             <span style={{ fontSize: '13px', color: 'rgba(245,240,232,0.7)', fontWeight: '300' }}>{item}</span>
           </div>
         ))}

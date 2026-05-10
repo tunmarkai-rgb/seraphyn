@@ -1,140 +1,287 @@
-import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import BrandLogo from './BrandLogo'
+
+const baseLinkStyle = {
+  fontSize: '13px',
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  textDecoration: 'none',
+  fontWeight: '500',
+}
+
+function routeIsActive(pathname, href) {
+  if (href === '/') return pathname === '/'
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
 
 export default function Navbar({ transparent = false }) {
   const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
-  // Scroll effect for transparent navbars
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20)
+    const handleScroll = () => setScrolled(window.scrollY > 24)
+    handleScroll()
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [location.pathname])
+
+  const role = profile?.role
+  const heroMode = transparent && !scrolled
+  const tone = heroMode ? 'light' : 'dark'
+
+  const navLinks = useMemo(() => {
+    if (!user) {
+      return [
+        { label: 'Browse Jobs', href: '/jobs' },
+        { label: 'Find Nurses', href: '/nurses' },
+        { label: 'About', href: '/about' },
+        { label: 'Contact', href: '/contact' },
+      ]
+    }
+
+    if (role === 'nurse') {
+      return [
+        { label: 'Dashboard', href: '/nurse/dashboard' },
+        { label: 'Browse Jobs', href: '/jobs' },
+        { label: 'Applications', href: '/nurse/applications' },
+        { label: 'Messages', href: '/messages' },
+        { label: 'Profile', href: '/nurse/profile' },
+        { label: 'Contact', href: '/contact' },
+      ]
+    }
+
+    if (role === 'employer') {
+      return [
+        { label: 'Dashboard', href: '/employer/dashboard' },
+        { label: 'Find Nurses', href: '/nurses' },
+        { label: 'Post Job', href: '/employer/post-job' },
+        { label: 'Messages', href: '/messages' },
+        { label: 'Contact', href: '/contact' },
+      ]
+    }
+
+    return [
+      { label: 'Home', href: '/' },
+      { label: 'Contact', href: '/contact' },
+    ]
+  }, [role, user])
 
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
   }
 
-  const navBg = transparent && !scrolled
-    ? 'rgba(0,0,0,0)'
-    : 'rgba(245,245,240,0.97)'
-
-  const navBorder = transparent && !scrolled
-    ? '1px solid rgba(255,255,255,0.1)'
-    : '1px solid var(--border)'
-
-  const linkColor = transparent && !scrolled
-    ? 'rgba(245,245,240,0.85)'
-    : 'var(--deep-navy)'
-
-  const logoFilter = transparent && !scrolled
-    ? 'brightness(0) invert(1) opacity(0.9)'
-    : 'none'
-
-  const getDashboardLink = () => {
-    if (profile?.role === 'nurse') return '/nurse/dashboard'
-    if (profile?.role === 'employer') return '/employer/dashboard'
-    if (profile?.role === 'admin') return '/admin'
-    return '/'
-  }
+  const linkColor = heroMode ? 'rgba(245,245,240,0.92)' : 'var(--deep-navy)'
+  const mutedColor = heroMode ? 'rgba(245,245,240,0.72)' : 'var(--text-muted)'
+  const navBg = heroMode ? 'linear-gradient(180deg, rgba(20,34,48,0.88), rgba(20,34,48,0.52))' : 'rgba(245,245,240,0.94)'
+  const navBorder = heroMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--border)'
 
   return (
     <>
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        background: navBg,
-        backdropFilter: scrolled || !transparent ? 'blur(12px)' : 'none',
-        borderBottom: navBorder,
-        padding: '0 5%', height: '72px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        transition: 'all 0.3s'
-      }}>
-        {/* Logo */}
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img
-            src="/logo.png"
-            alt="Seraphyn Care Solutions"
-            style={{ height: '40px', width: 'auto', filter: logoFilter, transition: 'filter 0.3s' }}
-          />
+      <nav
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          background: navBg,
+          backdropFilter: 'blur(18px)',
+          borderBottom: navBorder,
+          boxShadow: heroMode ? 'none' : '0 12px 32px rgba(44,62,80,0.08)',
+          padding: '0 5%',
+          minHeight: '78px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          transition: 'all 0.3s',
+        }}
+      >
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0 }}>
+          <BrandLogo tone={tone} size={30} showTagline={!heroMode} />
         </Link>
 
-        {/* Desktop nav links */}
-        <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }} className="nav-links-desktop">
-          {!user && (
-            <>
-              <Link to="/jobs" style={{ fontSize: '13px', letterSpacing: '0.06em', textTransform: 'uppercase', color: linkColor, textDecoration: 'none', fontWeight: '400', transition: 'color 0.2s' }}>
-                Browse Jobs
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }} className="nav-links-desktop">
+          {navLinks.map((item) => {
+            const active = routeIsActive(location.pathname, item.href)
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                style={{
+                  ...baseLinkStyle,
+                  color: active ? 'var(--warm-gold)' : linkColor,
+                }}
+              >
+                {item.label}
               </Link>
-              <Link to="/nurses" style={{ fontSize: '13px', letterSpacing: '0.06em', textTransform: 'uppercase', color: linkColor, textDecoration: 'none', fontWeight: '400' }}>
-                Find Nurses
-              </Link>
-            </>
-          )}
-          {user && (
-            <Link to={getDashboardLink()} style={{ fontSize: '13px', letterSpacing: '0.06em', textTransform: 'uppercase', color: linkColor, textDecoration: 'none', fontWeight: '400' }}>
-              Dashboard
-            </Link>
-          )}
+            )
+          })}
         </div>
 
-        {/* CTA buttons */}
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }} className="nav-links-desktop">
           {!user ? (
             <>
-              <Link to="/nurse-signup" style={{ padding: '9px 20px', border: `1px solid ${transparent && !scrolled ? 'rgba(245,245,240,0.5)' : 'var(--deep-navy)'}`, color: linkColor, borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', textDecoration: 'none', transition: 'all 0.2s' }}>
-                I'm a Nurse
+              <Link
+                to="/login"
+                style={{
+                  padding: '9px 18px',
+                  border: `1px solid ${heroMode ? 'rgba(245,245,240,0.28)' : 'var(--border)'}`,
+                  color: linkColor,
+                  borderRadius: '999px',
+                  fontSize: '12px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                }}
+              >
+                Login
               </Link>
-              <Link to="/employer-signup" style={{ padding: '9px 20px', background: 'var(--warm-gold)', color: 'white', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', textDecoration: 'none' }}>
+              <Link
+                to="/nurse-signup"
+                style={{
+                  padding: '9px 18px',
+                  border: `1px solid ${heroMode ? 'rgba(245,245,240,0.28)' : 'var(--deep-navy)'}`,
+                  color: linkColor,
+                  borderRadius: '999px',
+                  fontSize: '12px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                }}
+              >
+                I&apos;m a Nurse
+              </Link>
+              <Link
+                to="/employer-signup"
+                style={{
+                  padding: '10px 18px',
+                  background: 'var(--warm-gold)',
+                  color: 'white',
+                  borderRadius: '999px',
+                  fontSize: '12px',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  fontWeight: '700',
+                  textDecoration: 'none',
+                }}
+              >
                 Post Jobs
               </Link>
             </>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--warm-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: '16px', color: 'white', cursor: 'pointer' }}>
+              <Link
+                to={role === 'nurse' ? '/nurse/profile' : role === 'employer' ? '/employer/dashboard' : '/'}
+                style={{
+                  display: 'inline-flex',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '50%',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'var(--warm-gold)',
+                  color: 'white',
+                  fontFamily: 'Cormorant Garamond, serif',
+                  fontSize: '16px',
+                  textDecoration: 'none',
+                }}
+              >
                 {profile?.full_name?.[0]?.toUpperCase() || '?'}
-              </div>
-              <button onClick={handleSignOut} style={{ padding: '8px 16px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+              </Link>
+              <button
+                onClick={handleSignOut}
+                style={{
+                  padding: '9px 16px',
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  color: mutedColor,
+                  borderRadius: '999px',
+                  fontSize: '12px',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                }}
+              >
                 Sign Out
               </button>
             </div>
           )}
         </div>
 
-        {/* Mobile hamburger */}
         <button
-          onClick={() => setMenuOpen(!menuOpen)}
+          onClick={() => setMenuOpen((open) => !open)}
           style={{ display: 'none', flexDirection: 'column', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
           className="mobile-menu-btn"
         >
-          {[0,1,2].map(i => (
+          {[0, 1, 2].map((i) => (
             <span key={i} style={{ display: 'block', width: '24px', height: '1.5px', background: linkColor, transition: 'all 0.3s' }} />
           ))}
         </button>
       </nav>
 
-      {/* Mobile menu dropdown */}
       {menuOpen && (
-        <div style={{
-          position: 'fixed', top: '72px', left: 0, right: 0, zIndex: 99,
-          background: 'var(--warm-white)', borderBottom: '1px solid var(--border)',
-          padding: '24px 5%', display: 'flex', flexDirection: 'column', gap: '16px'
-        }}>
-          <Link to="/jobs" onClick={() => setMenuOpen(false)} style={{ fontSize: '14px', color: 'var(--deep-navy)', textDecoration: 'none', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>Browse Jobs</Link>
-          <Link to="/nurses" onClick={() => setMenuOpen(false)} style={{ fontSize: '14px', color: 'var(--deep-navy)', textDecoration: 'none', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>Find Nurses</Link>
+        <div
+          style={{
+            position: 'fixed',
+            top: '78px',
+            left: 0,
+            right: 0,
+            zIndex: 99,
+            background: 'rgba(245,245,240,0.98)',
+            borderBottom: '1px solid var(--border)',
+            padding: '20px 5% 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            boxShadow: '0 16px 36px rgba(44,62,80,0.08)',
+          }}
+        >
+          {navLinks.map((item) => (
+            <Link
+              key={item.href}
+              to={item.href}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                fontSize: '14px',
+                color: routeIsActive(location.pathname, item.href) ? 'var(--warm-gold)' : 'var(--deep-navy)',
+                textDecoration: 'none',
+                padding: '8px 0',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              {item.label}
+            </Link>
+          ))}
+
           {user ? (
-            <>
-              <Link to={getDashboardLink()} onClick={() => setMenuOpen(false)} style={{ fontSize: '14px', color: 'var(--deep-navy)', textDecoration: 'none', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>Dashboard</Link>
-              <button onClick={handleSignOut} style={{ padding: '12px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '13px', cursor: 'pointer' }}>Sign Out</button>
-            </>
+            <button
+              onClick={handleSignOut}
+              style={{ padding: '12px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '999px', fontSize: '13px' }}
+            >
+              Sign Out
+            </button>
           ) : (
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <Link to="/nurse-signup" onClick={() => setMenuOpen(false)} style={{ flex: 1, padding: '12px', border: '1px solid var(--deep-navy)', color: 'var(--deep-navy)', borderRadius: '2px', fontSize: '12px', textAlign: 'center', textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '500' }}>I'm a Nurse</Link>
-              <Link to="/employer-signup" onClick={() => setMenuOpen(false)} style={{ flex: 1, padding: '12px', background: 'var(--warm-gold)', color: 'white', borderRadius: '2px', fontSize: '12px', textAlign: 'center', textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '500' }}>Post Jobs</Link>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginTop: '4px' }}>
+              <Link to="/login" onClick={() => setMenuOpen(false)} style={{ padding: '12px', border: '1px solid var(--border)', color: 'var(--deep-navy)', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                Login
+              </Link>
+              <Link to="/nurse-signup" onClick={() => setMenuOpen(false)} style={{ padding: '12px', border: '1px solid var(--deep-navy)', color: 'var(--deep-navy)', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                I&apos;m a Nurse
+              </Link>
+              <Link to="/employer-signup" onClick={() => setMenuOpen(false)} style={{ padding: '12px', background: 'var(--warm-gold)', color: 'white', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '700' }}>
+                Post Jobs
+              </Link>
             </div>
           )}
         </div>

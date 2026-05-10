@@ -43,7 +43,11 @@ export default function AdminLayout({ children, title }) {
         {/* Logo */}
         <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--warm-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '16px', flexShrink: 0 }}>✦</div>
+            <img
+              src="/logo.png"
+              alt="Seraphyn"
+              style={{ height: '32px', width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+            />
             <div>
               <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '16px', color: 'white', lineHeight: 1.2 }}>Seraphyn</p>
               <p style={{ fontSize: '9px', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Admin</p>
