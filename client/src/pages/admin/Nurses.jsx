@@ -6,6 +6,7 @@ import StatusBadge from '../../components/StatusBadge'
 
 export default function AdminNurses() {
   const [allNurses, setAllNurses] = useState([])
+  const [documentsByNurse, setDocumentsByNurse] = useState({})
   const [filter, setFilter] = useState('pending')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
@@ -24,6 +25,27 @@ export default function AdminNurses() {
       .order('created_at', { ascending: false })
     setAllNurses(data || [])
     setLoading(false)
+  }
+
+  async function loadDocuments(nurseId) {
+    if (documentsByNurse[nurseId]) return
+    try {
+      const docs = await apiRequest(`/api/nurses/${nurseId}/documents`)
+      setDocumentsByNurse((current) => ({ ...current, [nurseId]: docs || [] }))
+    } catch (error) {
+      setFeedback(error.message)
+    }
+  }
+
+  async function downloadDocument(documentId) {
+    try {
+      const data = await apiRequest(`/api/nurses/documents/${documentId}/download`)
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (error) {
+      setFeedback(error.message)
+    }
   }
 
   async function approve(nurseId) {
@@ -87,7 +109,10 @@ export default function AdminNurses() {
             return (
               <div key={nurse.id} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
                 <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', cursor: 'pointer' }}
-                  onClick={() => setExpanded(isExp ? null : nurse.id)}>
+                  onClick={() => {
+                    setExpanded(isExp ? null : nurse.id)
+                    if (!isExp) void loadDocuments(nurse.id)
+                  }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: 'Cormorant Garamond, serif', fontSize: '16px' }}>
                       {nurse.first_name?.[0]}{nurse.last_name?.[0]}
@@ -131,6 +156,24 @@ export default function AdminNurses() {
                         {nurse.certifications.map((c, i) => (
                           <span key={i} style={{ padding: '3px 8px', background: 'rgba(126,181,200,0.1)', borderRadius: '2px', fontSize: '11px', color: 'var(--sky-blue)' }}>{c}</span>
                         ))}
+                      </div>
+                    )}
+                    {(documentsByNurse[nurse.id] || []).length > 0 && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '8px' }}>Certification Files</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {documentsByNurse[nurse.id].map((doc) => (
+                            <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                              <div>
+                                <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>{doc.title}</p>
+                              </div>
+                              <button type="button" onClick={() => downloadDocument(doc.id)}
+                                style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                                View
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

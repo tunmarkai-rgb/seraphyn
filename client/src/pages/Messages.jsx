@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
+import { apiRequest } from '../lib/api'
 
 export default function Messages() {
   const { user, profile } = useAuth()
@@ -24,25 +24,26 @@ export default function Messages() {
   }, [])
 
   useEffect(() => {
-    if (user) loadThreads()
+    if (user) {
+      void loadThreads()
+    }
   }, [user])
 
-  // Auto-select thread when navigated from applications page via ?app=<id>
   useEffect(() => {
     const appId = searchParams.get('app')
     if (appId && threads.length > 0) {
-      const match = threads.find(t => t.application_id === appId)
+      const match = threads.find((thread) => thread.application_id === appId)
       if (match) {
-        setSelectedThread(appId)
-        if (isMobile) setActiveView('messages')
+        setSelectedThread(match)
+        if (isMobile) setActiveView('conversation')
       }
     }
-  }, [searchParams, threads])
+  }, [searchParams, threads, isMobile])
 
   useEffect(() => {
     if (selectedThread) {
-      loadMessages(selectedThread)
-      markAsRead(selectedThread)
+      void loadMessages(selectedThread)
+      void markAsRead(selectedThread)
     }
   }, [selectedThread])
 
@@ -52,47 +53,35 @@ export default function Messages() {
 
   async function loadThreads() {
     setLoading(true)
-    const { data } = await supabase
-      .from('messages')
-      .select(`
-        application_id,
-        applications(
-          id, status,
-          jobs(title, city, state),
-          nurse_profiles(first_name, last_name, user_id),
-          employer_profiles(org_name, user_id)
-        )
-      `)
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .order('created_at', { ascending: false })
-
-    // Deduplicate by application_id
-    const seen = new Set()
-    const unique = (data || []).filter(m => {
-      if (!m.application_id || seen.has(m.application_id)) return false
-      seen.add(m.application_id)
-      return true
-    })
-    setThreads(unique)
-    setLoading(false)
+    try {
+      const data = await apiRequest('/api/messages/threads')
+      setThreads(data || [])
+    } catch (error) {
+      console.error('Failed to load threads:', error.message)
+      setThreads([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadMessages(thread) {
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('application_id', thread.application_id)
-      .order('created_at', { ascending: true })
-    setMessages(data || [])
+    try {
+      const data = await apiRequest(`/api/messages/${thread.application_id}`)
+      setMessages(data || [])
+    } catch (error) {
+      console.error('Failed to load messages:', error.message)
+      setMessages([])
+    }
   }
 
   async function markAsRead(thread) {
-    await supabase
-      .from('messages')
-      .update({ read: true })
-      .eq('application_id', thread.application_id)
-      .eq('receiver_id', user.id)
-      .eq('read', false)
+    try {
+      await apiRequest(`/api/messages/${thread.application_id}/read`, {
+        method: 'POST'
+      })
+    } catch (error) {
+      console.error('Failed to mark thread as read:', error.message)
+    }
   }
 
   async function sendMessage(e) {
@@ -100,24 +89,24 @@ export default function Messages() {
     if (!newMessage.trim() || !selectedThread) return
     setSending(true)
 
-    const app = selectedThread.applications
-    const receiverId = profile?.role === 'nurse'
-      ? app?.employer_profiles?.user_id
-      : app?.nurse_profiles?.user_id
+    try {
+      const data = await apiRequest('/api/messages', {
+        method: 'POST',
+        body: {
+          applicationId: selectedThread.application_id,
+          content: newMessage.trim()
+        }
+      })
 
-    const { data, error } = await supabase.from('messages').insert({
-      sender_id: user.id,
-      receiver_id: receiverId,
-      application_id: selectedThread.application_id,
-      content: newMessage.trim(),
-      read: false
-    }).select().single()
-
-    if (!error && data) {
-      setMessages(prev => [...prev, data])
-      setNewMessage('')
+      if (data) {
+        setMessages((prev) => [...prev, data])
+        setNewMessage('')
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error.message)
+    } finally {
+      setSending(false)
     }
-    setSending(false)
   }
 
   function getThreadName(thread) {
@@ -138,7 +127,6 @@ export default function Messages() {
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '88px 24px 0' }}>
         <div style={{ display: 'flex', height: 'calc(100vh - 110px)', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
 
-          {/* Thread list */}
           <div style={{ width: isMobile ? '100%' : '300px', borderRight: isMobile ? 'none' : '1px solid var(--border)', display: isMobile && activeView !== 'threads' ? 'none' : 'flex', flexDirection: 'column', flexShrink: 0 }} className="msg-sidebar">
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
               <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)' }}>Messages</h2>
@@ -151,7 +139,7 @@ export default function Messages() {
                   <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No messages yet.</p>
                 </div>
               ) : (
-                threads.map(thread => {
+                threads.map((thread) => {
                   const active = selectedThread?.application_id === thread.application_id
                   return (
                     <button key={thread.application_id} onClick={() => { setSelectedThread(thread); if (isMobile) setActiveView('conversation') }}
@@ -176,7 +164,6 @@ export default function Messages() {
             </div>
           </div>
 
-          {/* Message area */}
           <div style={{ flex: 1, display: isMobile && activeView !== 'conversation' ? 'none' : 'flex', flexDirection: 'column', minWidth: 0 }}>
             {!selectedThread ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -187,7 +174,6 @@ export default function Messages() {
               </div>
             ) : (
               <>
-                {/* Thread header */}
                 <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   {isMobile && (
                     <button onClick={() => setActiveView('threads')} style={{ background: 'none', border: 'none', color: 'var(--sky-blue)', fontSize: '20px', cursor: 'pointer', padding: '0', lineHeight: 1, flexShrink: 0 }}>‹</button>
@@ -201,14 +187,13 @@ export default function Messages() {
                   </div>
                 </div>
 
-                {/* Messages */}
                 <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {messages.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginTop: '40px' }}>
                       No messages yet. Start the conversation below.
                     </div>
                   ) : (
-                    messages.map(msg => {
+                    messages.map((msg) => {
                       const isMe = msg.sender_id === user.id
                       return (
                         <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
@@ -230,9 +215,8 @@ export default function Messages() {
                   <div ref={bottomRef} />
                 </div>
 
-                {/* Input */}
                 <form onSubmit={sendMessage} style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
-                  <input value={newMessage} onChange={e => setNewMessage(e.target.value)}
+                  <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Type a message..."
                     style={{ flex: 1, padding: '10px 14px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', color: 'var(--deep-navy)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
                   <button type="submit" disabled={sending || !newMessage.trim()}

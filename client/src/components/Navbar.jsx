@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import BrandLogo from './BrandLogo'
+import NotificationBell from './NotificationBell'
 
 const baseLinkStyle = {
   fontSize: '13px',
@@ -182,6 +183,7 @@ export default function Navbar({ transparent = false }) {
             </>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <NotificationBell tone={tone} />
               <Link
                 to={role === 'nurse' ? '/nurse/profile' : role === 'employer' ? '/employer/dashboard' : '/'}
                 style={{
@@ -218,6 +220,12 @@ export default function Navbar({ transparent = false }) {
             </div>
           )}
         </div>
+
+        {user && (
+          <div style={{ display: 'none', alignItems: 'center', gap: '10px' }} className="mobile-auth-tools">
+            <NotificationBell tone={tone} />
+          </div>
+        )}
 
         <button
           onClick={() => setMenuOpen((open) => !open)}

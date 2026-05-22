@@ -109,6 +109,10 @@ input, select, textarea {
   .mobile-menu-btn {
     display: flex !important;
   }
+
+  .mobile-auth-tools {
+    display: flex !important;
+  }
 }
 
 /* ── DASHBOARD / PORTAL LAYOUTS ── */

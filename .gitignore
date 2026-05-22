@@ -12,3 +12,6 @@ package-lock.json
 __pycache__/
 *.pyc
 .ssh/
+
+.vercel
+tmp/

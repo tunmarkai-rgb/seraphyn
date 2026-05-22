@@ -49,14 +49,20 @@ export default function EmployerSignup() {
         'employer',
         form.contactName,
         {
+          data: {
+            contact_name: form.contactName,
+            org_name: form.orgName,
+            org_type: form.orgType,
+            state: form.state,
+            onboarding_stage: 'profile'
+          },
           emailRedirectTo: `${getAppBaseUrl()}/auth/confirm`
         }
       )
       if (error) throw error
 
-      // Upsert employer_profiles row with signup data
       if (data?.user?.id) {
-        await supabase.from('employer_profiles').upsert({
+        const { error: profileUpsertError } = await supabase.from('employer_profiles').upsert({
           user_id: data.user.id,
           org_name: form.orgName,
           contact_name: form.contactName,
@@ -65,11 +71,22 @@ export default function EmployerSignup() {
           onboarding_stage: 'profile',
         }, { onConflict: 'user_id' })
 
+        if (profileUpsertError) {
+          console.error('Initial employer profile upsert deferred until confirmed login:', profileUpsertError.message)
+        }
+
         if (data.session?.access_token) {
           try {
             await apiRequest('/api/integrations/ghl/sync-self', {
               method: 'POST',
               accessToken: data.session.access_token
+            })
+            await apiRequest('/api/integrations/events/self', {
+              method: 'POST',
+              accessToken: data.session.access_token,
+              body: {
+                event: 'employer.signup_confirmed'
+              }
             })
           } catch (syncError) {
             console.error('Employer signup GHL sync failed:', syncError.message)

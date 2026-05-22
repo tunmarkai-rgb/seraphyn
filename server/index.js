@@ -5,13 +5,21 @@ const express = require('express')
 const cors = require('cors')
 const { getAllowedOrigins, getMissingRequiredEnv } = require('./lib/env')
 
-// Production deploys are documented with a repo-root .env, while local fallback
-// can still use server/.env when a root file is not present.
+// Load env deterministically before any config/routes import. This avoids
+// PM2/runtime differences when dotenv's automatic file resolution gets noisy.
 const rootEnvPath = path.resolve(__dirname, '..', '.env')
 const serverEnvPath = path.resolve(__dirname, '.env')
 const envPath = fs.existsSync(rootEnvPath) ? rootEnvPath : serverEnvPath
 
-dotenv.config({ path: envPath })
+if (fs.existsSync(envPath)) {
+  const parsedEnv = dotenv.parse(fs.readFileSync(envPath))
+
+  for (const [key, value] of Object.entries(parsedEnv)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
+}
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -95,7 +103,11 @@ app.use('/api/employers', require('./routes/employers'))
 app.use('/api/jobs',      require('./routes/jobs'))
 app.use('/api/admin',     require('./routes/admin'))
 app.use('/api/integrations', require('./routes/integrations'))
+app.use('/api/notifications', require('./routes/notifications'))
+app.use('/api/leads', require('./routes/leads'))
+app.use('/api/messages', require('./routes/messages'))
 app.use('/api/payments',  require('./routes/payments'))
+app.use('/api/contracts', require('./routes/contracts'))
 app.use('/api/webhooks',  require('./routes/webhooks'))
 
 app.listen(PORT, () => {

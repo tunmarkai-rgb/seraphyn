@@ -17,6 +17,7 @@ const APP_STATUS = {
 export default function EmployerDashboard() {
   const { user } = useAuth()
   const [empProfile, setEmpProfile] = useState(null)
+  const [contracts, setContracts] = useState([])
   const [jobs, setJobs] = useState([])
   const [applications, setApplications] = useState([])
   const [loading, setLoading] = useState(true)
@@ -32,10 +33,11 @@ export default function EmployerDashboard() {
     try {
       const { data: ep } = await supabase
         .from('employer_profiles')
-        .select('*')
+        .select('*, contracts(id, title, document_type, status, signed_at)')
         .eq('user_id', user.id)
         .single()
       setEmpProfile(ep)
+      setContracts(ep?.contracts || [])
 
       if (ep) {
         const { data: jobsData } = await supabase
@@ -274,6 +276,36 @@ export default function EmployerDashboard() {
             </Link>
           ))}
         </div>
+
+        {contracts.filter((contract) => contract.status === 'signed').length > 0 && (
+          <div style={{ marginTop: '24px', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--deep-navy)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Signed Agreements
+              </h3>
+              <Link to="/employer/onboarding" style={{ fontSize: '12px', color: 'var(--sky-blue)' }}>
+                Open account documents
+              </Link>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {contracts
+                .filter((contract) => contract.status === 'signed')
+                .map((contract) => (
+                  <div key={contract.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--warm-white)' }}>
+                    <div>
+                      <p style={{ fontSize: '13px', color: 'var(--deep-navy)', fontWeight: '500' }}>{contract.title || contract.document_type}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Signed {contract.signed_at ? new Date(contract.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'recently'}
+                      </p>
+                    </div>
+                    <Link to="/employer/onboarding" style={{ fontSize: '12px', color: 'var(--sky-blue)' }}>
+                      Open
+                    </Link>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

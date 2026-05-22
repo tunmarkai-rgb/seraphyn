@@ -2,6 +2,35 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { apiRequest } from '../lib/api'
+import BrandLogo from '../components/BrandLogo'
+
+async function resolveRole(userId, fallbackRole = '') {
+  if (!userId) return fallbackRole
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (!error && data?.role) {
+    return data.role
+  }
+
+  const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
+    supabase.from('nurse_profiles').select('user_id').eq('user_id', userId).maybeSingle(),
+    supabase.from('employer_profiles').select('user_id').eq('user_id', userId).maybeSingle()
+  ])
+
+  if (nurseProfile?.user_id) return 'nurse'
+  if (employerProfile?.user_id) return 'employer'
+
+  if (error) {
+    console.error('Failed to resolve confirmed user role:', error.message)
+  }
+
+  return fallbackRole
+}
 
 async function routeAuthenticatedUser(navigate) {
   const { data: { session } } = await supabase.auth.getSession()
@@ -11,7 +40,7 @@ async function routeAuthenticatedUser(navigate) {
     return
   }
 
-  const role = session.user.user_metadata?.role
+  const role = await resolveRole(session.user.id, session.user.user_metadata?.role)
 
   if (role === 'nurse') {
     try {
@@ -19,6 +48,9 @@ async function routeAuthenticatedUser(navigate) {
       await apiRequest('/api/integrations/events/self', {
         method: 'POST',
         body: { event: 'nurse.signup_confirmed' }
+      })
+      await apiRequest('/api/integrations/nurse/profile-completion', {
+        method: 'POST'
       })
     } catch (error) {
       console.error('Post-confirmation nurse sync failed:', error.message)
@@ -30,6 +62,10 @@ async function routeAuthenticatedUser(navigate) {
   if (role === 'employer') {
     try {
       await apiRequest('/api/integrations/ghl/sync-self', { method: 'POST' })
+      await apiRequest('/api/integrations/events/self', {
+        method: 'POST',
+        body: { event: 'employer.signup_confirmed' }
+      })
     } catch (error) {
       console.error('Post-confirmation employer sync failed:', error.message)
     }
@@ -132,9 +168,8 @@ export default function AuthConfirm() {
         boxShadow: '0 10px 30px rgba(44,62,80,0.08)',
         textAlign: 'center'
       }}>
-        <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', textDecoration: 'none', marginBottom: '28px' }}>
-          <img src="/logo.png" alt="Seraphyn" style={{ height: '38px', width: 'auto', objectFit: 'contain' }} />
-          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', color: 'var(--deep-navy)' }}>Seraphyn</span>
+        <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', marginBottom: '28px' }}>
+          <BrandLogo tone="dark" size={34} showTagline={true} />
         </Link>
 
         <div style={{

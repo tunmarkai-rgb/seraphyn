@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
+import { apiRequest } from '../lib/api'
 
 export default function NurseDetail() {
   const { id } = useParams()
@@ -10,6 +11,7 @@ export default function NurseDetail() {
   const navigate = useNavigate()
   const [nurse, setNurse] = useState(null)
   const [empProfile, setEmpProfile] = useState(null)
+  const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
 
   const isFullAccess = empProfile?.onboarding_stage === 'approved' && empProfile?.approved_at
@@ -37,6 +39,32 @@ export default function NurseDetail() {
       .eq('user_id', user.id)
       .single()
     setEmpProfile(data)
+  }
+
+  useEffect(() => {
+    if (isFullAccess && profile?.role === 'employer') {
+      void loadDocuments()
+    }
+  }, [isFullAccess, profile, id])
+
+  async function loadDocuments() {
+    try {
+      const data = await apiRequest(`/api/nurses/${id}/documents`)
+      setDocuments(data || [])
+    } catch (error) {
+      console.error('Failed to load nurse documents:', error.message)
+    }
+  }
+
+  async function openDocument(documentId) {
+    try {
+      const data = await apiRequest(`/api/nurses/documents/${documentId}/download`)
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (error) {
+      console.error('Failed to open nurse document:', error.message)
+    }
   }
 
   if (loading) {
@@ -123,6 +151,30 @@ export default function NurseDetail() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {nurse.certifications.map((c, i) => (
                 <span key={i} style={{ padding: '6px 12px', background: 'rgba(126,181,200,0.1)', borderRadius: '2px', fontSize: '12px', color: 'var(--sky-blue)', fontWeight: '500' }}>{c}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isFullAccess && documents.length > 0 && (
+          <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '28px', marginBottom: '20px' }}>
+            <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+              Certification Documents
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {documents.map((doc) => (
+                <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                  <div>
+                    <p style={{ fontSize: '13px', color: 'var(--deep-navy)', fontWeight: '500' }}>{doc.title}</p>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Uploaded {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => openDocument(doc.id)}
+                    style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                    View
+                  </button>
+                </div>
               ))}
             </div>
           </div>

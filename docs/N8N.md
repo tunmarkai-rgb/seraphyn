@@ -13,7 +13,12 @@ Recommended ownership split:
 
 - Portal server: auth, admin actions, GHL contract webhooks, access control
 - Supabase webhooks: trigger most data-change automations
-- n8n: OpenAI processing, contact sync, matching, screening, and downstream orchestration
+- n8n: Claude processing, contact sync, matching, screening, and downstream orchestration
+
+Current auth-email note:
+- Signup confirmation and password reset emails are currently sent by Supabase Auth through Resend SMTP.
+- n8n is not part of the live auth-email path.
+- GHL is not the sender for account verification or password recovery in the current setup.
 
 Current implementation note:
 - The portal now includes a direct server-side GHL contact sync fallback for nurse/employer records.
@@ -23,7 +28,7 @@ Current implementation note:
 Current production workflow state:
 - `Seraphyn - Portal Events Inbound` is active in production with workflow ID `xh5ruX7lGR9m8vIE`
 - `Seraphyn - Resume Parser` is exported to production with workflow ID `xFl2h0aUGWqK7Zsb`
-- the resume parser remains inactive until a real OpenAI key is loaded into the native n8n credential
+- the resume parser remains inactive until a real Anthropic key is loaded into the native n8n credential
 
 ---
 
@@ -37,7 +42,7 @@ Trigger:
 Actions:
 - Fetch resume file
 - Extract text
-- Send to OpenAI
+- Send to Claude through the native n8n AI Agent path
 - Write parsed JSON to `nurse_profiles.ai_parsed_data`
 - Backfill empty nurse profile fields where safe
 
@@ -52,7 +57,7 @@ Trigger:
 Actions:
 - Load nurse profile
 - Load active jobs
-- Rank top matches with OpenAI
+- Rank top matches with Claude
 - Store top matches in `nurse_profiles.ai_job_matches`
 
 Primary output:
@@ -119,6 +124,8 @@ Current server-side event candidates:
 
 - `nurse.signup_confirmed`
 - `nurse.document_uploaded`
+- `nurse.profile_completed`
+- `nurse.job_matched`
 - `nurse.approved`
 - `employer.signup_confirmed`
 - `employer.approved`
@@ -134,18 +141,19 @@ This is optional support for orchestration. The primary automation source remain
 ## Suggested Credentials in n8n
 
 - Supabase service-role credential
-- OpenAI credential
+- Anthropic credential
 - GHL credential / token
 - Email delivery path used by the business
 
 Current native credentials already created in production:
 - `Seraphyn Shared Webhook Secret` (`httpHeaderAuth`)
 - `Seraphyn Supabase API` (`supabaseApi`)
-- `Seraphyn OpenAI API` (`openAiApi`)
+- `Seraphyn Anthropic API` (`anthropicApi`)
 
 Approved delivery split:
 - GHL owns contact-facing notification delivery in M2
 - n8n stays focused on orchestration, AI work, and data writes
+- Supabase + Resend own auth email delivery for signup confirmation and password reset
 
 ---
 
@@ -154,7 +162,7 @@ Approved delivery split:
 Document these in the deployment target used by n8n and/or the portal:
 
 ```env
-OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
 GHL_API_KEY=pit-...
 GHL_LOCATION_ID=...
 GHL_WORKFLOW_WEBHOOK_URL=https://hooks.leadconnectorhq.com/your-shared-ghl-webhook
@@ -171,6 +179,8 @@ Portal note:
 ## Acceptance Checks
 
 - Resume upload populates `ai_parsed_data`
+- Nurse 100% completion fires `nurse.profile_completed`
+- Job match milestone fires `nurse.job_matched`
 - Approved nurse gets `ai_job_matches`
 - New application gets screening notes
 - Approved users receive the right notification path

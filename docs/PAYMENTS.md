@@ -1,20 +1,20 @@
 # PAYMENTS.md - M2 Billing + Contracts Model
-# Phase 2
 
 > M2 has no online payment collection.
-> Billing is offline. Contracts are handled through GHL Documents.
+> Billing is offline.
+> Employer agreements are signed inside the portal by default.
 
 ---
 
 ## Summary
 
-Seraphyn M2 uses three systems together:
+Seraphyn M2 currently uses:
 
-- Portal app: onboarding state, admin workflows, dashboard access
-- GHL Documents: send and sign staffing agreements
-- n8n: async automation and contact/notification orchestration
+- Portal app: onboarding state, contract signing, document storage, access control
+- GHL: CRM, nurture, pipeline updates, legacy contract fallback
+- n8n: async automation and contact sync orchestration
 
-Payments do not run through Stripe, GHL payment links, or the portal UI in M2.
+Payments do not run through Stripe, GHL payment links, or portal checkout in M2.
 
 ---
 
@@ -22,111 +22,98 @@ Payments do not run through Stripe, GHL payment links, or the portal UI in M2.
 
 | Billing Item | M2 Handling |
 |---|---|
-| Platform subscription | Kundayi invoices employer offline |
-| Placement fee | Kundayi invoices employer offline after hire |
-| Per diem billing | Portal tracks hours, Kundayi invoices offline |
+| Platform subscription | invoiced offline |
+| Placement fee | invoiced offline after hire |
+| Per diem billing | tracked in portal, invoiced offline |
 
-The `payments` table remains a manual tracking/reporting table. It is not a source for live payment processing in M2.
+`payments` remains a manual tracking/reporting table only.
 
 ---
 
-## Contract Flow
+## Employer Agreement Flow
 
-### 1. Employer profile submitted
+### Default path: portal-native signing
 
-- Employer finishes Stage 1 profile setup in the portal
-- `employer_profiles.onboarding_stage` moves to `contract`
-- Employer waits for Seraphyn to send the staffing agreement
+1. Employer completes Stage 1 profile setup.
+2. Employer reaches onboarding Step 2 in the portal.
+3. Step 2 shows:
+   - onboarding guidance
+   - Direct Hire Agreement
+   - Per Diem Staffing Agreement
+   - one shared signature panel
+4. Employer signs once through `POST /api/employers/contracts/sign`.
+5. Server:
+   - appends an audit/signature page to both source PDFs
+   - stores both signed files in private `contracts` storage
+   - upserts one `contracts` row per agreement document
+   - sets `employer_profiles.contract_signed = true`
+   - emails both signed PDFs to the employer
+   - CCs `kundayiw@gmail.com`
+6. Employer moves to Step 3 pending approval.
+7. Admin approval remains the final unlock for dashboard access.
 
-### 2. Admin sends contract
+### Legacy fallback: GHL Documents
 
-- Admin triggers `POST /api/admin/employers/:id/send-contract`
-- Server calls GHL Documents template send API
-- Server creates or updates a `contracts` row with:
-  - `status = sent`
-  - `sent_at`
-  - `template_url = ghl-template:<templateId>`
-  - GHL document reference stored in the legacy `docuseal_submission_id` field for now
-
-### 3. Employer signs in GHL
-
-- GHL sends `DocumentSigned` to `POST /api/webhooks/ghl`
-- Server verifies the webhook secret
-- Server matches the employer by GHL document reference or contact email
-- Server updates:
-  - `contracts.status = signed`
-  - `contracts.signed_url`
-  - `contracts.signed_at`
-  - `employer_profiles.contract_signed = true`
-  - `employer_profiles.contract_signed_at`
-
-### 4. Admin approves account
-
-- Admin approval remains the final unlock
-- `employer_profiles.onboarding_stage` becomes `approved`
-- Employer gets dashboard access
+- `POST /api/admin/employers/:id/send-contract` still exists.
+- Use it only when the portal-native contract path is unavailable or needs manual fallback.
+- Legacy webhook handling through `POST /api/webhooks/ghl` remains supported.
 
 ---
 
 ## Required Server Interfaces
 
+### `POST /api/employers/contracts/sign`
+
+Purpose:
+- Sign both employer agreements in one portal session
+
+Expected behavior:
+- require authenticated employer session
+- require signer name
+- require signature image
+- require consent checkbox
+- generate two signed PDFs
+- store both files privately
+- email both files as attachments
+
+### `GET /api/contracts/:id/download`
+
+Purpose:
+- Serve a private signed download URL for employer/admin viewers
+
+Expected behavior:
+- employer can only download its own contracts
+- admin can download any employer contract
+- return a signed URL, never a public bucket URL
+
 ### `POST /api/admin/employers/:id/send-contract`
 
 Purpose:
-- Send staffing agreement from the configured GHL template
+- Legacy GHL document send fallback
 
 Expected behavior:
-- Require admin auth
-- Require `GHL_API_KEY`, `GHL_LOCATION_ID`, and `GHL_DOCUMENT_TEMPLATE_ID`
-- Require `GHL_USER_ID` for the GHL template send API
-- Require employer to already have `ghl_contact_id`
-- If `ghl_contact_id` is missing, attempt a server-side GHL contact sync before failing
-- Refuse resend once `contract_signed = true`
-
-### `POST /api/webhooks/ghl`
-
-Purpose:
-- Handle inbound GHL document events
-
-M2 scope:
-- `DocumentSigned` only
-
-Out of scope for M2:
-- `PaymentSuccess`
-- subscription creation/cancellation
-- any live billing automation
-
----
-
-## GHL Requirements
-
-Kundayi must provide or complete:
-
-- GHL private integration token / API access
-- GHL location ID
-- Staffing agreement template uploaded in GHL Documents
-- Template ID for the staffing agreement
-- GHL user ID used as the document sender for template delivery
-- Webhook target for `DocumentSigned`
-- Shared secret used by the portal to verify GHL webhook calls
+- require admin auth
+- require synced GHL contact or sync it first
+- refuse resend once the employer is already fully signed in the portal path
 
 ---
 
 ## Portal UX Rules
 
-- Keep the 3-step employer onboarding experience
-- Stage 2 is the real contract stage
-- Show waiting/sent/signed messaging only
-- Do not show payment links, checkout CTAs, or subscription collection UI
+- Keep the 3-step employer onboarding experience.
+- Step 2 is the agreement stage.
+- Employer should be able to re-open signed documents from onboarding and the private employer dashboard/account surfaces.
+- Admin should be able to see both agreement rows and download both signed copies.
+- Do not show payment links, checkout CTAs, or subscription purchase UI.
 
 ---
 
 ## What Is Intentionally Not in M2
 
-- Stripe integration
-- GHL Payments integration
-- payment links in funnels or portal
+- Stripe collection
+- GHL Payments
+- subscription checkout
 - payment success webhooks
-- automatic subscription state management
+- automatic subscription lifecycle management
 
-Those items are explicitly deferred while offline billing remains the operating model.
+Those remain deferred while offline billing is the operating model.

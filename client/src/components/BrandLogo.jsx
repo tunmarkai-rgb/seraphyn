@@ -21,11 +21,14 @@ export default function BrandLogo({
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: size >= 40 ? '7px 10px' : '6px 8px',
-          borderRadius: '999px',
-          background: lightTone ? 'rgba(255,255,255,0.08)' : 'rgba(44,62,80,0.05)',
-          border: lightTone ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(44,62,80,0.08)',
-          boxShadow: lightTone ? 'none' : '0 10px 24px rgba(44,62,80,0.06)',
+          width: `${size + 22}px`,
+          height: `${size + 22}px`,
+          borderRadius: '50%',
+          background: lightTone ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.98)',
+          border: lightTone ? '1px solid rgba(255,255,255,0.26)' : '1px solid rgba(44,62,80,0.10)',
+          boxShadow: lightTone ? '0 12px 28px rgba(6,16,26,0.18)' : '0 10px 24px rgba(44,62,80,0.08)',
+          overflow: 'hidden',
+          flexShrink: 0
         }}
       >
         <img

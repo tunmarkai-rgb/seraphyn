@@ -4,6 +4,34 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import BrandLogo from '../components/BrandLogo'
 
+async function resolveRole(userId, fallbackRole = '') {
+  if (!userId) return fallbackRole
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (!error && data?.role) {
+    return data.role
+  }
+
+  const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
+    supabase.from('nurse_profiles').select('user_id').eq('user_id', userId).maybeSingle(),
+    supabase.from('employer_profiles').select('user_id').eq('user_id', userId).maybeSingle()
+  ])
+
+  if (nurseProfile?.user_id) return 'nurse'
+  if (employerProfile?.user_id) return 'employer'
+
+  if (error) {
+    console.error('Failed to resolve login role:', error.message)
+  }
+
+  return fallbackRole
+}
+
 export default function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
@@ -26,12 +54,7 @@ export default function Login() {
     try {
       const { data, error } = await signIn(form.email, form.password)
       if (error) throw error
-      const { data: userRow } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-      const role = userRow?.role
+      const role = await resolveRole(data.user.id, data.user.user_metadata?.role)
       if (role === 'nurse') navigate('/nurse/dashboard')
       else if (role === 'employer') navigate('/employer/dashboard')
       else if (role === 'admin') navigate('/admin')

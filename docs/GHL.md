@@ -10,6 +10,11 @@ Build a fully automated marketing and CRM system for Seraphyn Care Solutions ins
 **GHL Account Access:** Kundayi has admin access to the sub-account.
 **Brand Colors:** Sky Blue #7EB5C8 | Warm Gold #C8A96E | Warm White #F5F5F0 | Deep Navy #2C3E50
 
+Current auth-email boundary:
+- GHL does not currently send portal signup confirmation emails.
+- GHL does not currently send portal password reset emails.
+- Those account-auth emails are handled by Supabase Auth with Resend SMTP branding.
+
 ---
 
 ## What's Already Built in GHL (Before Scope Change)
@@ -110,6 +115,12 @@ All original pipelines and tags were deleted and rebuilt with the new spec below
 | 9 | Licensed in the US? | Radio (Yes/No) | Yes |
 
 **Routing:** → Nurse Pipeline Stage 1 (New Applicant) + fires Nurse Sequence + notifies admin
+
+Current live implementation notes:
+- Form submit redirects to `https://staffing.seraphyncare.com/nurse-signup`
+- The companion GHL workflow should call `POST https://api.seraphyncare.com/api/leads/nurse-prefill`
+- Header for that webhook action: `x-seraphyn-secret: seraphyn2026!`
+- `ghlOpportunityId` is optional in the current workflow step if HighLevel does not expose an opportunity merge field there
 
 ### 2. Employer Lead Capture Form
 (Embed ID: 4Mo2IsoMKsbP1XooIJld)

@@ -1,22 +1,109 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getAppBaseUrl, supabase } from '../lib/supabase'
 import { SPECIALTIES, US_STATES } from '../lib/constants'
-import { apiRequest } from '../lib/api'
+import { apiRequest, publicApiRequest } from '../lib/api'
 import BrandLogo from '../components/BrandLogo'
+
+function normalizeYearsExperience(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  const allowed = new Set([
+    '1-2 years',
+    '3-5 years',
+    '6-10 years',
+    '10-15 years',
+    '15+ years'
+  ])
+
+  if (allowed.has(raw)) {
+    return raw
+  }
+
+  const numeric = Number.parseInt(raw, 10)
+  if (Number.isNaN(numeric)) {
+    return ''
+  }
+
+  if (numeric <= 2) return '1-2 years'
+  if (numeric <= 5) return '3-5 years'
+  if (numeric <= 10) return '6-10 years'
+  if (numeric <= 15) return '10-15 years'
+  return '15+ years'
+}
 
 export default function NurseSignup() {
   const { signUp } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(false)
+  const [prefillLoading, setPrefillLoading] = useState(false)
   const [error, setError] = useState('')
+  const [leadContext, setLeadContext] = useState({
+    ghlContactId: null,
+    ghlOpportunityId: null,
+    source: ''
+  })
   const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '',
-    password: '', confirmPassword: '',
-    licenseState: '', specialty: '', yearsExperience: ''
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    licenseState: '',
+    specialty: '',
+    yearsExperience: '',
+    shiftPreference: ''
   })
 
+  useEffect(() => {
+    let active = true
+
+    async function loadLeadPrefill() {
+      const token = searchParams.get('lead')
+      if (!token) return
+
+      setPrefillLoading(true)
+      try {
+        const data = await publicApiRequest(`/api/leads/nurse-prefill?token=${encodeURIComponent(token)}`)
+        const lead = data.lead || {}
+        if (!active) return
+
+        setLeadContext({
+          ghlContactId: lead.ghlContactId || null,
+          ghlOpportunityId: lead.ghlOpportunityId || null,
+          source: lead.source || 'ghl-form'
+        })
+
+        setForm((current) => ({
+          ...current,
+          firstName: current.firstName || lead.firstName || '',
+          lastName: current.lastName || lead.lastName || '',
+          email: current.email || lead.email || '',
+          licenseState: current.licenseState || lead.licenseState || '',
+          specialty: current.specialty || lead.specialty || '',
+          yearsExperience: current.yearsExperience || normalizeYearsExperience(lead.yearsExperience),
+          shiftPreference: current.shiftPreference || lead.shiftPreference || ''
+        }))
+      } catch (prefillError) {
+        if (active) {
+          setError(prefillError.message)
+        }
+      } finally {
+        if (active) {
+          setPrefillLoading(false)
+        }
+      }
+    }
+
+    void loadLeadPrefill()
+
+    return () => {
+      active = false
+    }
+  }, [searchParams])
 
   const handle = (e) => setForm({ ...form, [e.target.name]: e.target.value })
 
@@ -31,32 +118,54 @@ export default function NurseSignup() {
     }
     setLoading(true)
     try {
-      const { data, error } = await signUp(
+      const expMap = {
+        '1-2 years': 1,
+        '3-5 years': 3,
+        '6-10 years': 6,
+        '10-15 years': 10,
+        '15+ years': 15
+      }
+
+      const { data, error: signUpError } = await signUp(
         form.email,
         form.password,
         'nurse',
         `${form.firstName} ${form.lastName}`,
         {
+          data: {
+            first_name: form.firstName,
+            last_name: form.lastName,
+            specialty: form.specialty,
+            license_state: form.licenseState,
+            years_experience: expMap[form.yearsExperience] || null,
+            shift_preference: form.shiftPreference || null,
+            source: leadContext.source || 'portal-signup',
+            ghl_contact_id: leadContext.ghlContactId || null,
+            ghl_opportunity_id: leadContext.ghlOpportunityId || null
+          },
           emailRedirectTo: `${getAppBaseUrl()}/auth/confirm`
         }
       )
-      if (error) throw error
+      if (signUpError) throw signUpError
 
-      // Upsert nurse_profiles row with signup data
       if (data?.user?.id) {
-        const expMap = { '1-2 years': 1, '3-5 years': 3, '6-10 years': 6, '10-15 years': 10, '15+ years': 15 }
-        await supabase.from('nurse_profiles').upsert({
+        const { error: profileUpsertError } = await supabase.from('nurse_profiles').upsert({
           user_id: data.user.id,
           first_name: form.firstName,
           last_name: form.lastName,
           license_state: form.licenseState,
           specialty: form.specialty,
           years_experience: expMap[form.yearsExperience] || null,
+          shift_preference: form.shiftPreference || null
         }, { onConflict: 'user_id' })
+
+        if (profileUpsertError) {
+          console.error('Initial nurse profile upsert deferred until confirmed login:', profileUpsertError.message)
+        }
 
         if (data.session?.access_token) {
           try {
-            await apiRequest('/api/integrations/ghl/sync-self', {
+            const syncResult = await apiRequest('/api/integrations/ghl/sync-self', {
               method: 'POST',
               accessToken: data.session.access_token
             })
@@ -67,7 +176,11 @@ export default function NurseSignup() {
                 event: 'nurse.signup_confirmed',
                 payload: {
                   specialty: form.specialty,
-                  licenseState: form.licenseState
+                  licenseState: form.licenseState,
+                  shiftPreference: form.shiftPreference,
+                  source: leadContext.source || 'portal-signup',
+                  ghlContactId: leadContext.ghlContactId || syncResult?.contactId || null,
+                  ghlOpportunityId: leadContext.ghlOpportunityId || null
                 }
               }
             })
@@ -92,7 +205,6 @@ export default function NurseSignup() {
       gridTemplateColumns: '1fr 1fr',
       fontFamily: 'DM Sans, sans-serif'
     }} className="auth-layout">
-      {/* Left panel */}
       <div style={{
         background: 'var(--deep-navy)',
         padding: '60px 48px',
@@ -104,7 +216,17 @@ export default function NurseSignup() {
       }}>
         <div style={{ position: 'relative', zIndex: 1 }}>
           <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', marginBottom: '48px', textDecoration: 'none' }}>
-            <BrandLogo tone="light" size={28} showTagline={true} />
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '14px 18px',
+              borderRadius: '999px',
+              background: 'rgba(245,240,232,0.08)',
+              border: '1px solid rgba(245,240,232,0.14)',
+              boxShadow: '0 18px 40px rgba(6,16,26,0.28)'
+            }}>
+              <BrandLogo tone="light" size={36} showTagline={true} />
+            </span>
           </Link>
           <p style={{ fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '16px' }}>
             Nurse Portal
@@ -119,7 +241,7 @@ export default function NurseSignup() {
           <p style={{ color: 'rgba(245,240,232,0.6)', fontSize: '14px', fontWeight: '300', lineHeight: '1.8', marginBottom: '40px' }}>
             Join thousands of verified nurses earning premium rates on travel and contract assignments nationwide.
           </p>
-          {['Premium assignments, no hidden fees', 'Average 4–5 day placement', 'Verified and secure platform'].map((item, i) => (
+          {['Premium assignments, no hidden fees', 'Average 4-5 day placement', 'Verified and secure platform'].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
               <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '1px solid rgba(196,151,90,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'var(--warm-gold)', flexShrink: 0 }}>✓</div>
               <span style={{ fontSize: '13px', color: 'rgba(245,240,232,0.7)', fontWeight: '300' }}>{item}</span>
@@ -128,7 +250,6 @@ export default function NurseSignup() {
         </div>
       </div>
 
-      {/* Right panel */}
       <div style={{
         background: 'var(--cream)',
         padding: '60px 48px',
@@ -151,6 +272,16 @@ export default function NurseSignup() {
               borderRadius: '2px', padding: '12px 16px', marginBottom: '20px',
               fontSize: '13px', color: '#C04040'
             }}>{error}</div>
+          )}
+
+          {prefillLoading && (
+            <div style={{
+              background: 'rgba(126,181,200,0.12)', border: '1px solid rgba(126,181,200,0.25)',
+              borderRadius: '2px', padding: '12px 16px', marginBottom: '20px',
+              fontSize: '13px', color: 'var(--deep-navy)'
+            }}>
+              Loading your nurse lead details...
+            </div>
           )}
 
           <form onSubmit={submit}>
@@ -178,7 +309,7 @@ export default function NurseSignup() {
                 <select name="licenseState" value={form.licenseState} onChange={handle} required
                   style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                   <option value="">Select state...</option>
-                  {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -186,17 +317,32 @@ export default function NurseSignup() {
                 <select name="specialty" value={form.specialty} onChange={handle} required
                   style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                   <option value="">Select...</option>
-                  {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {SPECIALTIES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--teal)', fontWeight: '500', marginBottom: '6px' }}>Years of Experience</label>
               <select name="yearsExperience" value={form.yearsExperience} onChange={handle} required
                 style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                 <option value="">Select...</option>
-                {['1-2 years', '3-5 years', '6-10 years', '10-15 years', '15+ years'].map(y => <option key={y} value={y}>{y}</option>)}
+                {['1-2 years', '3-5 years', '6-10 years', '10-15 years', '15+ years'].map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--teal)', fontWeight: '500', marginBottom: '6px' }}>Shift Preference</label>
+              <select name="shiftPreference" value={form.shiftPreference} onChange={handle}
+                style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
+                <option value="">Select...</option>
+                <option value="Day">Day Shift</option>
+                <option value="Night">Night Shift</option>
+                <option value="Evening">Evening Shift</option>
+                <option value="Mixed">Mixed / Flexible</option>
+                <option value="Per Diem">Per Diem</option>
+                <option value="Contract Travel">Contract Travel</option>
+                <option value="Permanent">Permanent</option>
               </select>
             </div>
 

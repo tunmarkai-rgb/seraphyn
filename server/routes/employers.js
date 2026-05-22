@@ -1,8 +1,25 @@
 const express = require('express')
 const router = express.Router()
 const { supabase } = require('../config/supabase')
-const { requireAuth, requireRole } = require('../middleware/auth')
+const { requireAuth, requireRole, requireSessionUser } = require('../middleware/auth')
 const { dispatchPortalEvent } = require('../lib/portal-events')
+const { createNotification } = require('../lib/notifications')
+const { ensureEmployerProfileRow, ensurePublicUserForAuthUser } = require('../lib/user-bootstrap')
+const { signEmployerContracts, sendSignedContractEmail } = require('../lib/contracts')
+
+function isEmployerUser(req) {
+  return req.user?.role === 'employer' || req.authUser?.user_metadata?.role === 'employer'
+}
+
+async function getEmployerProfileByUserId(userId) {
+  const { data } = await supabase
+    .from('employer_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  return data || null
+}
 
 // GET /api/employers — admin only
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
@@ -93,6 +110,35 @@ router.put('/applications/:id/status', requireAuth, requireRole('employer'), asy
 
   if (error) return res.status(500).json({ error: error.message })
 
+  const statusLabels = {
+    reviewing: 'reviewing',
+    interview: 'interview scheduled',
+    offer: 'offer extended',
+    hired: 'hired',
+    rejected: 'not selected'
+  }
+
+  const { data: nurseProfile } = await supabase
+    .from('nurse_profiles')
+    .select('user_id')
+    .eq('id', data.nurse_id)
+    .maybeSingle()
+
+  if (nurseProfile?.user_id) {
+    await createNotification({
+      userId: nurseProfile.user_id,
+      type: 'application.status_changed',
+      title: 'Application updated',
+      body: `Your application is now ${statusLabels[status] || status}.`,
+      entityType: 'application',
+      entityId: data.id,
+      metadata: {
+        status,
+        jobId: data.job_id
+      }
+    })
+  }
+
   if (status === 'interview') {
     void dispatchPortalEvent('application.interview_scheduled', {
       applicationId: data.id,
@@ -113,6 +159,108 @@ router.put('/applications/:id/status', requireAuth, requireRole('employer'), asy
   }
 
   res.json(data)
+})
+
+router.post('/onboarding/profile', requireSessionUser, async (req, res) => {
+  try {
+    if (!isEmployerUser(req)) {
+      return res.status(403).json({ error: 'Employer access required' })
+    }
+
+    const publicUser = await ensurePublicUserForAuthUser(req.authUser, 'employer')
+    const {
+      org_name,
+      org_type,
+      contact_name,
+      contact_title,
+      city,
+      state,
+      bed_count,
+      description
+    } = req.body || {}
+
+    const employer = await ensureEmployerProfileRow(publicUser.id, {
+      org_name,
+      org_type,
+      contact_name,
+      contact_title,
+      city,
+      state,
+      bed_count: bed_count ? parseInt(bed_count, 10) : null,
+      description,
+      onboarding_stage: 'contract'
+    })
+
+    res.json({
+      employer,
+      onboardingStage: employer.onboarding_stage || 'contract'
+    })
+  } catch (error) {
+    console.error('Employer onboarding profile save failed:', error.message)
+    res.status(500).json({ error: error.message || 'Failed to save employer onboarding profile' })
+  }
+})
+
+router.post('/contracts/sign', requireSessionUser, async (req, res) => {
+  try {
+    if (!isEmployerUser(req)) {
+      return res.status(403).json({ error: 'Employer access required' })
+    }
+
+    const publicUser = await ensurePublicUserForAuthUser(req.authUser, 'employer')
+    const employer = await getEmployerProfileByUserId(publicUser.id)
+    if (!employer?.id) {
+      return res.status(404).json({ error: 'Employer profile not found' })
+    }
+
+    const { signerName, signerTitle, signatureDataUrl, consentAccepted } = req.body || {}
+    if (!consentAccepted) {
+      return res.status(400).json({ error: 'Electronic signature consent is required' })
+    }
+    if (!signerName || !signatureDataUrl) {
+      return res.status(400).json({ error: 'Signer name and signature are required' })
+    }
+
+    const signResult = await signEmployerContracts({
+      employer,
+      signerName,
+      signerTitle,
+      signerEmail: publicUser.email || req.authUser.email,
+      signatureDataUrl,
+      ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '',
+      userAgent: req.headers['user-agent'] || ''
+    })
+
+    await sendSignedContractEmail({
+      employerEmail: publicUser.email || req.authUser.email,
+      employerName: employer.contact_name || signerName,
+      ccEmail: 'kundayiw@gmail.com',
+      contracts: signResult.contracts
+    })
+
+    void dispatchPortalEvent('employer.contract_signed', {
+      employerId: employer.id,
+      employerUserId: publicUser.id,
+      orgName: employer.org_name,
+      signedAt: signResult.signedAt
+    }, {
+      sync: { type: 'employer', id: employer.id }
+    })
+
+    res.json({
+      message: 'Contracts signed successfully',
+      signedAt: signResult.signedAt,
+      contracts: signResult.contracts.map((contract) => ({
+        id: contract.record.id,
+        documentType: contract.documentType,
+        title: contract.title,
+        status: contract.record.status
+      }))
+    })
+  } catch (error) {
+    console.error('Employer contract signing failed:', error.message)
+    res.status(500).json({ error: error.message || 'Failed to sign employer contracts' })
+  }
 })
 
 module.exports = router

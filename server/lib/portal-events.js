@@ -1,6 +1,7 @@
 const axios = require('axios')
 const { sendN8nEvent } = require('./n8n')
 const { syncEmployerContactById, syncNurseContactById } = require('./ghl-sync')
+const { syncOpportunityStageByContact } = require('./ghl')
 
 function toEnvSuffix(event) {
   return String(event || '')
@@ -71,6 +72,53 @@ async function syncEntityForEvent(sync) {
   }
 }
 
+function getNurseOpportunityTarget(event) {
+  switch (event) {
+    case 'nurse.signup_confirmed':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Application Review', preventRegression: true }
+    case 'nurse.profile_completed':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Application Review', preventRegression: true }
+    case 'nurse.document_uploaded':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Credentialing In Progress', preventRegression: true }
+    case 'nurse.job_matched':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Job Matched', preventRegression: true }
+    case 'application.interview_scheduled':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Interview Scheduled', preventRegression: true }
+    case 'application.hired':
+      return { pipelineName: 'Seraphyn - Nurse Talent Pipeline', stageName: 'Placed', preventRegression: true }
+    default:
+      return null
+  }
+}
+
+async function syncOpportunityForEvent(event, payload = {}) {
+  const target = getNurseOpportunityTarget(event)
+  if (!target || !payload.ghlContactId) {
+    return { skipped: true, reason: 'No opportunity stage sync target for event' }
+  }
+
+  const fallbackName = [
+    payload.fullName,
+    payload.email,
+    payload.orgName,
+    payload.specialty && `Nurse - ${payload.specialty}`
+  ].filter(Boolean)[0] || `Seraphyn Nurse Candidate`
+
+  try {
+    return await syncOpportunityStageByContact({
+      contactId: payload.ghlContactId,
+      pipelineName: target.pipelineName,
+      stageName: target.stageName,
+      preventRegression: target.preventRegression,
+      opportunityId: payload.ghlOpportunityId || null,
+      name: fallbackName
+    })
+  } catch (error) {
+    console.error(`[ghl-opportunity] Failed to sync stage for "${event}":`, error.response?.data || error.message)
+    return { success: false, error: error.message }
+  }
+}
+
 async function dispatchPortalEvent(event, payload = {}, options = {}) {
   const syncResult = options.sync ? await syncEntityForEvent(options.sync) : null
   const enrichedPayload = {
@@ -78,9 +126,10 @@ async function dispatchPortalEvent(event, payload = {}, options = {}) {
     ...(syncResult?.contactId ? { ghlContactId: syncResult.contactId } : {})
   }
 
-  const [n8n, ghlWorkflow] = await Promise.all([
+  const [n8n, ghlWorkflow, ghlOpportunity] = await Promise.all([
     sendN8nEvent(event, enrichedPayload),
-    sendGhlWorkflowEvent(event, enrichedPayload)
+    sendGhlWorkflowEvent(event, enrichedPayload),
+    syncOpportunityForEvent(event, enrichedPayload)
   ])
 
   return {
@@ -88,7 +137,8 @@ async function dispatchPortalEvent(event, payload = {}, options = {}) {
     payload: enrichedPayload,
     sync: syncResult,
     n8n,
-    ghlWorkflow
+    ghlWorkflow,
+    ghlOpportunity
   }
 }
 

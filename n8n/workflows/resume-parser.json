@@ -323,36 +323,63 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/responses",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "openAiApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4.1-mini', input: [ { role: 'system', content: [ { type: 'input_text', text: 'You extract structured nurse resume data for Seraphyn. Return JSON only. Use null when a value is not explicit. certifications must be an array of strings. years_experience must be an integer when clearly inferable. Do not invent license numbers, specialties, states, or dates.' } ] }, { role: 'user', content: [ { type: 'input_text', text: `Existing nurse profile context:\\n${JSON.stringify($json.nurseProfile || {}, null, 2)}\\n\\nResume text:\\n${$json.trimmedResumeText}\\n\\nReturn a JSON object with these keys: full_name, first_name, last_name, email, phone, specialty, license_number, license_state, years_experience, availability, shift_preference, bio, certifications, skills, summary, confidence_notes.` } ] } ] }) }}",
-        "options": {
-          "timeout": 60000
-        }
+        "promptType": "define",
+        "text": "=You extract structured nurse resume data for Seraphyn. Use the nurse profile context when helpful, but never overwrite explicit resume facts with guesses. Use null when a value is not explicit. certifications and skills must be arrays of strings. years_experience must be an integer only when clearly inferable. Do not invent license numbers, specialties, states, dates, email addresses, or phone numbers. Existing nurse profile context:\\n{{ JSON.stringify($json.nurseProfile || {}, null, 2) }}\\n\\nResume text:\\n{{ $json.trimmedResumeText }}",
+        "hasOutputParser": true,
+        "options": {}
       },
-      "id": "http-openai-parse",
-      "name": "OpenAI Resume Parse",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "ai-agent-resume-parse",
+      "name": "Resume Parser Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
       "position": [
         2960,
         320
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-3-5-haiku-20241022",
+          "cachedResultName": "Claude Haiku 3.5"
+        },
+        "options": {}
+      },
+      "id": "anthropic-chat-model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        2960,
+        540
       ],
       "credentials": {
-        "openAiApi": {
-          "id": "qqPI7KpcC1ZsxOYR",
-          "name": "Seraphyn OpenAI API"
+        "anthropicApi": {
+          "id": "replace-me",
+          "name": "Seraphyn Anthropic API"
         }
       }
     },
     {
       "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"full_name\": \"\",\n  \"first_name\": \"\",\n  \"last_name\": \"\",\n  \"email\": \"\",\n  \"phone\": \"\",\n  \"specialty\": \"\",\n  \"license_number\": \"\",\n  \"license_state\": \"\",\n  \"years_experience\": 0,\n  \"availability\": \"\",\n  \"shift_preference\": \"\",\n  \"bio\": \"\",\n  \"certifications\": [\"\"],\n  \"skills\": [\"\"],\n  \"summary\": \"\",\n  \"confidence_notes\": \"\"\n}"
+      },
+      "id": "structured-output-parser",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        3200,
+        540
+      ]
+    },
+    {
+      "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const base = $('Prepare Resume Prompt').first().json;\nconst payload = $input.first().json;\n\nconst maybeText = payload.output_text\n  || payload.output?.map((entry) => (entry.content || []).map((part) => part.text || '').join('\\n')).join('\\n')\n  || payload.choices?.[0]?.message?.content\n  || '';\n\nconst cleaned = String(maybeText)\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```/i, '')\n  .replace(/```$/i, '')\n  .trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (error) {\n  parsed = {\n    summary: null,\n    confidence_notes: `Failed to parse OpenAI JSON: ${error.message}`\n  };\n}\n\nconst profile = base.nurseProfile || {};\nconst asArray = (value) => Array.isArray(value) ? value.filter(Boolean) : [];\nconst existingCerts = asArray(profile.certifications);\nconst parsedCerts = asArray(parsed.certifications);\n\nconst updatePayload = {\n  ai_parsed_data: {\n    parsed_at: new Date().toISOString(),\n    source: 'n8n.resume_parser',\n    file_name: base.fileName,\n    file_extension: base.extension,\n    public_resume_url: base.publicResumeUrl,\n    text_length: base.extractedTextLength,\n    model: 'gpt-4.1-mini',\n    parsed\n  }\n};\n\nif (!profile.first_name && parsed.first_name) updatePayload.first_name = parsed.first_name;\nif (!profile.last_name && parsed.last_name) updatePayload.last_name = parsed.last_name;\nif (!profile.specialty && parsed.specialty) updatePayload.specialty = parsed.specialty;\nif (!profile.license_number && parsed.license_number) updatePayload.license_number = parsed.license_number;\nif (!profile.license_state && parsed.license_state) updatePayload.license_state = parsed.license_state;\nif (!profile.years_experience && Number.isInteger(parsed.years_experience)) updatePayload.years_experience = parsed.years_experience;\nif (!profile.availability && parsed.availability) updatePayload.availability = parsed.availability;\nif (!profile.shift_preference && parsed.shift_preference) updatePayload.shift_preference = parsed.shift_preference;\nif (!profile.bio && parsed.bio) updatePayload.bio = parsed.bio;\nif (!existingCerts.length && parsedCerts.length) updatePayload.certifications = parsedCerts;\n\nreturn [{\n  json: {\n    ...base,\n    parsedResume: parsed,\n    updatePayload\n  }\n}];"
+        "jsCode": "const base = $('Prepare Resume Prompt').first().json;\nconst payload = $input.first().json;\n\nconst parsed = payload.output?.output || payload.output || payload.result || payload.json || payload;\n\nconst normalizeString = (value) => {\n  if (value === null || value === undefined) return null;\n  const text = String(value).trim();\n  return text ? text : null;\n};\n\nconst normalizeArray = (value) => Array.isArray(value)\n  ? value.map((entry) => normalizeString(entry)).filter(Boolean)\n  : [];\n\nconst normalized = {\n  full_name: normalizeString(parsed.full_name),\n  first_name: normalizeString(parsed.first_name),\n  last_name: normalizeString(parsed.last_name),\n  email: normalizeString(parsed.email),\n  phone: normalizeString(parsed.phone),\n  specialty: normalizeString(parsed.specialty),\n  license_number: normalizeString(parsed.license_number),\n  license_state: normalizeString(parsed.license_state),\n  years_experience: Number.isInteger(parsed.years_experience) ? parsed.years_experience : null,\n  availability: normalizeString(parsed.availability),\n  shift_preference: normalizeString(parsed.shift_preference),\n  bio: normalizeString(parsed.bio),\n  certifications: normalizeArray(parsed.certifications),\n  skills: normalizeArray(parsed.skills),\n  summary: normalizeString(parsed.summary),\n  confidence_notes: normalizeString(parsed.confidence_notes)\n};\n\nconst profile = base.nurseProfile || {};\nconst existingCerts = normalizeArray(profile.certifications);\n\nconst updatePayload = {\n  ai_parsed_data: {\n    parsed_at: new Date().toISOString(),\n    source: 'n8n.resume_parser',\n    file_name: base.fileName,\n    file_extension: base.extension,\n    public_resume_url: base.publicResumeUrl,\n    text_length: base.extractedTextLength,\n    model: 'claude-3-5-haiku-20241022',\n    parsed: normalized\n  }\n};\n\nif (!profile.first_name && normalized.first_name) updatePayload.first_name = normalized.first_name;\nif (!profile.last_name && normalized.last_name) updatePayload.last_name = normalized.last_name;\nif (!profile.specialty && normalized.specialty) updatePayload.specialty = normalized.specialty;\nif (!profile.license_number && normalized.license_number) updatePayload.license_number = normalized.license_number;\nif (!profile.license_state && normalized.license_state) updatePayload.license_state = normalized.license_state;\nif (!profile.years_experience && Number.isInteger(normalized.years_experience)) updatePayload.years_experience = normalized.years_experience;\nif (!profile.availability && normalized.availability) updatePayload.availability = normalized.availability;\nif (!profile.shift_preference && normalized.shift_preference) updatePayload.shift_preference = normalized.shift_preference;\nif (!profile.bio && normalized.bio) updatePayload.bio = normalized.bio;\nif (!existingCerts.length && normalized.certifications.length) updatePayload.certifications = normalized.certifications;\n\nreturn [{\n  json: {\n    ...base,\n    parsedResume: normalized,\n    updatePayload\n  }\n}];"
       },
       "id": "code-build-update",
       "name": "Build Profile Update",
@@ -613,19 +640,41 @@
       "main": [
         [
           {
-            "node": "OpenAI Resume Parse",
+            "node": "Resume Parser Agent",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI Resume Parse": {
+    "Resume Parser Agent": {
       "main": [
         [
           {
             "node": "Build Profile Update",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Resume Parser Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Resume Parser Agent",
+            "type": "ai_outputParser",
             "index": 0
           }
         ]

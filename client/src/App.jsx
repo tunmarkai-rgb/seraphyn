@@ -1,7 +1,8 @@
 import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import BrandLogo from './components/BrandLogo'
 import ProtectedRoute from './components/ProtectedRoute'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 
 const HomePage = lazy(() => import('./pages/HomePage'))
 const Login = lazy(() => import('./pages/Login'))
@@ -49,11 +50,9 @@ function RouteFallback() {
       }}
     >
       <div style={{ textAlign: 'center' }}>
-        <img
-          src="/logo.png"
-          alt="Seraphyn"
-          style={{ height: '34px', width: 'auto', marginBottom: '12px', objectFit: 'contain' }}
-        />
+        <div style={{ marginBottom: '12px' }}>
+          <BrandLogo tone="dark" size={32} align="center" />
+        </div>
         <p style={{ color: 'var(--text-muted)', fontSize: '13px', letterSpacing: '0.08em' }}>
           LOADING...
         </p>
@@ -62,12 +61,35 @@ function RouteFallback() {
   )
 }
 
+function HomeRoute() {
+  const { user, profile, loading } = useAuth()
+
+  if (loading) {
+    return <RouteFallback />
+  }
+
+  const resolvedRole = profile?.role || user?.user_metadata?.role
+  if (user && resolvedRole === 'nurse') {
+    return <Navigate to="/nurse/dashboard" replace />
+  }
+
+  if (user && resolvedRole === 'employer') {
+    return <Navigate to="/employer/dashboard" replace />
+  }
+
+  if (user && resolvedRole === 'admin') {
+    return <Navigate to="/admin" replace />
+  }
+
+  return <HomePage />
+}
+
 function App() {
   return (
     <AuthProvider>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<HomeRoute />} />
           <Route path="/login" element={<Login />} />
           <Route path="/auth/confirm" element={<AuthConfirm />} />
           <Route path="/auth/reset-password" element={<ResetPassword />} />

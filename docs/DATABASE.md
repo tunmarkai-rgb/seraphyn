@@ -1,26 +1,20 @@
-# DATABASE.md — Seraphyn Care Solutions
-# Full Supabase Schema Reference
+# DATABASE.md - Seraphyn Care Solutions
+# Supabase Schema Reference
 
 **Project URL:** https://rchydpjwyfpxuexnipwk.supabase.co
 **PostgreSQL:** 17.6 | **Region:** US West 2 (Oregon)
 
 ---
 
-## Extensions Enabled
-
-`pgcrypto`, `uuid-ossp`, `pg_stat_statements`, `pg_graphql`, `pg_trgm`, `citext`, `supabase_vault`, `plpgsql`
-
----
-
-## Tables (All with RLS Enabled)
+## Core Tables
 
 ### users
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK, references auth.users |
 | email | text | unique, citext |
-| role | enum | 'nurse' \| 'employer' \| 'admin' |
-| status | enum | 'pending' \| 'approved' \| 'rejected' \| 'suspended' |
+| role | enum | `nurse` \| `employer` \| `admin` |
+| status | enum | `pending` \| `approved` \| `rejected` \| `suspended` |
 | full_name | text | |
 | avatar_url | text | |
 | phone | text | |
@@ -32,35 +26,46 @@
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| user_id | uuid | FK → users |
+| user_id | uuid | FK to users |
 | first_name | text | |
 | last_name | text | |
-| specialty | text | use constants.js list |
+| specialty | text | use constants list |
 | license_number | text | |
-| license_state | text | 2-char state code |
-| years_experience | integer | Minimum years in range (1=1-2 yrs, 3=3-5 yrs, 6=6-10 yrs, 10=10-15 yrs, 15=15+ yrs) |
-| resume_url | text | Supabase Storage: resumes/ |
-| license_url | text | Supabase Storage: licenses/ |
+| license_state | text | state code |
+| years_experience | integer | minimum value in range |
+| resume_url | text | storage path in `resumes/` |
+| license_url | text | storage path in `licenses/` |
 | availability | text | |
 | shift_preference | text | |
 | bio | text | |
-| certifications | text[] | array |
+| certifications | text[] | structured certification tags |
 | profile_photo_url | text | |
 | approved_at | timestamptz | |
+| ai_parsed_data | jsonb | resume parser output |
+| ai_job_matches | jsonb | n8n job matching output |
+| ghl_contact_id | text | |
+| ghl_synced_at | timestamptz | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | auto-updated |
-| ai_parsed_data | jsonb | written by n8n resume parser |
-| ai_job_matches | jsonb | top 5 job matches from n8n |
-| ghl_contact_id | text | written by GHL webhook |
-| ghl_synced_at | timestamptz | |
+
+### nurse_documents
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| nurse_id | uuid | FK to nurse_profiles |
+| document_type | text | currently `certification` |
+| title | text | display label |
+| file_url | text | private storage path in `certifications/` |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
 
 ### employer_profiles
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| user_id | uuid | FK → users |
+| user_id | uuid | FK to users |
 | org_name | text | |
-| org_type | text | Hospital, Clinic, etc. |
+| org_type | text | hospital, clinic, etc. |
 | contact_name | text | |
 | contact_title | text | |
 | city | text | |
@@ -68,102 +73,103 @@
 | bed_count | integer | |
 | description | text | |
 | logo_url | text | |
-| onboarding_stage | text | 'profile' \| 'contract' \| 'approved' |
-| contract_signed | boolean | set by GHL Documents signed webhook |
+| onboarding_stage | text | `profile` \| `contract` \| `approved` |
+| contract_signed | boolean | true once both required agreements are signed |
 | contract_signed_at | timestamptz | |
-| stripe_customer_id | text | legacy field - unused in offline M2 |
-| subscription_status | text | legacy field - offline billing in M2 |
+| approved_at | timestamptz | admin approval timestamp |
+| stripe_customer_id | text | legacy unused M2 field |
+| subscription_status | text | legacy unused M2 field |
 | subscription_start | timestamptz | |
 | subscription_ends | timestamptz | |
-| approved_at | timestamptz | set by admin |
-| created_at | timestamptz | |
-| updated_at | timestamptz | auto-updated |
 | ghl_contact_id | text | |
 | ghl_synced_at | timestamptz | |
+| created_at | timestamptz | |
+| updated_at | timestamptz | auto-updated |
 
 ### jobs
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| employer_id | uuid | FK → employer_profiles |
+| employer_id | uuid | FK to employer_profiles |
 | title | text | |
-| specialty | text | use constants.js list |
+| specialty | text | |
 | location | text | |
 | city | text | |
 | state | text | |
-| shift_type | text | Per Diem \| Contract \| Permanent |
-| pay_rate | numeric | hourly rate |
-| contract_length | text | e.g. "13 Weeks" |
+| shift_type | text | `Per Diem` \| `Contract` \| `Permanent` |
+| pay_rate | numeric | |
+| contract_length | text | |
 | description | text | |
 | requirements | text | |
-| status | text | 'active' \| 'filled' \| 'closed' \| 'paused' |
+| status | text | `active` \| `filled` \| `closed` \| `paused` |
+| expires_at | timestamptz | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
-| expires_at | timestamptz | |
 
 ### applications
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| job_id | uuid | FK → jobs |
-| nurse_id | uuid | FK → nurse_profiles |
-| employer_id | uuid | FK → employer_profiles |
-| status | text | 'submitted' \| 'reviewing' \| 'interview' \| 'offer' \| 'hired' \| 'rejected' |
+| job_id | uuid | FK to jobs |
+| nurse_id | uuid | FK to nurse_profiles |
+| employer_id | uuid | FK to employer_profiles |
+| status | text | `submitted` \| `reviewing` \| `interview` \| `offer` \| `hired` \| `rejected` |
 | cover_note | text | |
-| admin_notes | text | visible to nurse as "Admin Note" |
+| admin_notes | text | |
+| placement_fee_pct | numeric | |
+| hired_at | timestamptz | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
-| placement_fee_pct | numeric | set by admin on hire |
-| hired_at | timestamptz | |
 
 ### messages
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| sender_id | uuid | FK → users |
-| receiver_id | uuid | FK → users — must include user_id in profile queries |
-| application_id | uuid | FK → applications |
+| sender_id | uuid | FK to users |
+| receiver_id | uuid | FK to users |
+| application_id | uuid | FK to applications |
 | content | text | |
 | read | boolean | default false |
 | created_at | timestamptz | |
 
-**Important:** When querying messages, always include `user_id` in nested profile selects:
-```js
-nurse_profiles(first_name, last_name, user_id)
-employer_profiles(org_name, user_id)
-```
-
-### per_diem_shifts
+### notifications
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| employer_id | uuid | FK → employer_profiles |
-| nurse_id | uuid | FK → nurse_profiles, nullable |
-| specialty | text | |
-| shift_date | date | |
-| start_time | time | |
-| end_time | time | |
-| hours_worked | numeric | |
-| hourly_rate | numeric | |
-| status | text | 'open' \| 'filled' \| 'completed' \| 'cancelled' |
-| notes | text | |
-| admin_notes | text | |
-| created_at | timestamptz | |
-| updated_at | timestamptz | |
+| user_id | uuid | FK to users |
+| type | text | e.g. `message.new`, `nurse.profile_completed` |
+| title | text | |
+| body | text | |
+| entity_type | text | |
+| entity_id | text | |
+| read | boolean | default false |
+| read_at | timestamptz | |
+| email_sent_at | timestamptz | |
+| metadata | jsonb | |
+| created_at | timestamptz | default now() |
 
 ### contracts
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| employer_id | uuid | FK → employer_profiles |
-| template_url | text | agreement template reference, e.g. `ghl-template:<templateId>` |
-| signed_url | text | Supabase Storage path |
-| google_drive_url | text | mirrored copy |
-| docuseal_submission_id | text | legacy field currently reused to store the GHL document reference |
-| status | text | 'pending' \| 'sent' \| 'signed' \| 'expired' |
+| employer_id | uuid | FK to employer_profiles |
+| document_type | text | `direct_hire` \| `staffing_boss` |
+| title | text | agreement title |
+| template_url | text | `portal-template:*` or legacy `ghl-template:*` |
+| source_file_name | text | bundled source PDF |
+| signed_url | text | legacy signed storage path field |
+| signed_storage_path | text | canonical private storage path in `contracts/` |
+| google_drive_url | text | optional mirror |
+| docuseal_submission_id | text | legacy external reference field |
+| status | text | `pending` \| `sent` \| `signed` \| `expired` |
 | sent_at | timestamptz | |
 | signed_at | timestamptz | |
 | expires_at | timestamptz | |
+| signed_by_name | text | |
+| signed_by_email | text | |
+| signed_by_title | text | |
+| signature_provider | text | `portal-native` or legacy provider |
+| signature_audit | jsonb | signed timestamp, IP, user agent |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
@@ -171,34 +177,19 @@ employer_profiles(org_name, user_id)
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| employer_id | uuid | FK → employer_profiles |
-| type | text | 'subscription' \| 'placement_fee' |
-| amount | numeric | manual/offline tracking amount in cents |
-| currency | text | default 'usd' |
-| stripe_payment_intent_id | text | legacy field - unused in offline M2 |
-| stripe_invoice_id | text | legacy field - unused in offline M2 |
-| placement_percentage | numeric | 10–15 |
-| job_id | uuid | FK → jobs, nullable |
-| application_id | uuid | FK → applications, nullable |
-| status | text | 'pending' \| 'succeeded' \| 'failed' \| 'refunded' |
+| employer_id | uuid | FK to employer_profiles |
+| type | text | `subscription` \| `placement_fee` |
+| amount | numeric | offline tracked amount in cents |
+| currency | text | default `usd` |
+| stripe_payment_intent_id | text | legacy unused M2 field |
+| stripe_invoice_id | text | legacy unused M2 field |
+| placement_percentage | numeric | |
+| job_id | uuid | nullable FK to jobs |
+| application_id | uuid | nullable FK to applications |
+| status | text | `pending` \| `succeeded` \| `failed` \| `refunded` |
 | notes | text | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
-
----
-
-## Triggers
-
-| Trigger | Table | Function | Purpose |
-|---|---|---|---|
-| on_auth_user_created | auth.users | handle_new_user() | Creates row in public.users on signup |
-| on_user_created | public.users | handle_new_profile() | Creates nurse_profiles or employer_profiles row |
-| users_updated_at | public.users | update_updated_at() | Auto-updates updated_at |
-| jobs_updated_at | public.jobs | update_updated_at() | Auto-updates updated_at |
-| applications_updated_at | public.applications | update_updated_at() | Auto-updates updated_at |
-| shifts_updated_at | public.per_diem_shifts | update_updated_at() | Auto-updates updated_at |
-| contracts_updated_at | public.contracts | update_updated_at() | Auto-updates updated_at |
-| payments_updated_at | public.payments | update_updated_at() | Auto-updates updated_at |
 
 ---
 
@@ -206,24 +197,16 @@ employer_profiles(org_name, user_id)
 
 | Bucket | Access | Used For |
 |---|---|---|
-| resumes | authenticated write, public read | Nurse resume uploads |
-| licenses | authenticated write, public read | Nurse license uploads |
+| resumes | authenticated write, existing public-read flow | nurse resume uploads |
+| licenses | authenticated write, existing public-read flow | nurse license uploads |
+| certifications | private, signed server downloads only | nurse certification proof documents |
+| contracts | private, signed server downloads only | signed employer agreements |
 
 ---
 
-## Supabase SQL Editor
+## Operational Notes
 
-Quick access: https://supabase.com/dashboard/project/rchydpjwyfpxuexnipwk/editor
-
-Useful queries:
-```sql
--- Check users table
-SELECT id, email, role, status FROM public.users;
-
--- Reset employer to onboarding start (for testing)
-UPDATE public.employer_profiles SET onboarding_stage = 'profile', contract_signed = false WHERE user_id = '[uuid]';
-
--- Approve a nurse
-UPDATE public.users SET status = 'approved' WHERE email = 'nurse@example.com';
-UPDATE public.nurse_profiles SET approved_at = NOW() WHERE user_id = '[uuid]';
-```
+- Employer onboarding Stage 1 now writes through `POST /api/employers/onboarding/profile` so server logic can backfill `public.users` / `employer_profiles` safely.
+- Employer agreement signing is now portal-native first. GHL document send remains a legacy fallback path.
+- Nurses can upload resume and license directly into `nurse_profiles` and certification proof files into `nurse_documents`.
+- Admin and approved employers access private nurse certification documents through signed server URLs, not public bucket links.

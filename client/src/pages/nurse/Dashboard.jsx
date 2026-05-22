@@ -6,9 +6,15 @@ import Navbar from '../../components/Navbar'
 
 const COMPLETION_FIELDS = [
   'first_name', 'last_name', 'specialty', 'license_number',
-  'license_state', 'years_experience', 'bio', 'resume_url',
+  'license_state', 'years_experience', 'availability', 'bio', 'resume_url',
   'license_url', 'shift_preference'
 ]
+
+function hasValue(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  return true
+}
 
 const STATUS_COLORS = {
   submitted:  { bg: 'rgba(126,181,200,0.12)', color: 'var(--sky-blue)',  label: 'Submitted' },
@@ -64,8 +70,21 @@ export default function NurseDashboard() {
     }
   }
 
-  const completion = nurseProfile
-    ? Math.round(COMPLETION_FIELDS.filter(f => nurseProfile[f]).length / COMPLETION_FIELDS.length * 100)
+  const metadataProfile = user?.user_metadata ? {
+    first_name: user.user_metadata.first_name || '',
+    last_name: user.user_metadata.last_name || '',
+    specialty: user.user_metadata.specialty || '',
+    license_state: user.user_metadata.license_state || '',
+    years_experience: user.user_metadata.years_experience ?? null,
+    shift_preference: user.user_metadata.shift_preference || ''
+  } : null
+
+  const displayProfile = nurseProfile
+    ? { ...metadataProfile, ...nurseProfile }
+    : metadataProfile
+
+  const completion = displayProfile
+    ? Math.round(COMPLETION_FIELDS.filter((field) => hasValue(displayProfile[field])).length / COMPLETION_FIELDS.length * 100)
     : 0
 
   const appCounts = applications.reduce((acc, a) => {
@@ -111,7 +130,7 @@ export default function NurseDashboard() {
               Nurse Portal
             </p>
             <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: '300', color: 'var(--deep-navy)', marginBottom: '10px' }}>
-              Welcome back, {nurseProfile?.first_name || profile?.full_name?.split(' ')[0] || 'Nurse'}
+              Welcome back, {displayProfile?.first_name || profile?.full_name?.split(' ')[0] || 'Nurse'}
             </h1>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', borderRadius: '2px', fontSize: '11px', fontWeight: '500', letterSpacing: '0.06em', background: statusBadge.bg, color: statusBadge.color }}>
               <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: statusBadge.color, display: 'inline-block' }} />
@@ -175,11 +194,11 @@ export default function NurseDashboard() {
                   const labels = {
                     first_name: 'First Name', last_name: 'Last Name', specialty: 'Specialty',
                     license_number: 'License Number', license_state: 'License State',
-                    years_experience: 'Years of Experience', bio: 'Bio / About',
+                    years_experience: 'Years of Experience', availability: 'Availability', bio: 'Bio / About',
                     resume_url: 'Resume Uploaded', license_url: 'License Uploaded',
                     shift_preference: 'Shift Preference'
                   }
-                  const done = !!nurseProfile?.[field]
+                  const done = hasValue(displayProfile?.[field])
                   return (
                     <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: done ? 'var(--success)' : 'var(--text-muted)' }}>
                       <span style={{ fontSize: '10px' }}>{done ? '✓' : '○'}</span>
@@ -202,7 +221,7 @@ export default function NurseDashboard() {
                 { label: 'Resume / CV', key: 'resume_url', icon: '📄' },
                 { label: 'Nursing License', key: 'license_url', icon: '🪪' },
               ].map(doc => {
-                const uploaded = !!nurseProfile?.[doc.key]
+                const uploaded = hasValue(displayProfile?.[doc.key])
                 return (
                   <div key={doc.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import BrandLogo from './BrandLogo'
 
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth()
@@ -16,16 +17,9 @@ export default function ProtectedRoute({ children, allowedRoles }) {
         }}
       >
         <div style={{ textAlign: 'center' }}>
-          <img
-            src="/logo.png"
-            alt="Seraphyn"
-            style={{
-              height: '40px',
-              width: 'auto',
-              marginBottom: '16px',
-              objectFit: 'contain',
-            }}
-          />
+          <div style={{ marginBottom: '16px' }}>
+            <BrandLogo tone="light" size={34} showTagline={true} align="center" />
+          </div>
           <p style={{ color: 'rgba(245,240,232,0.6)', fontSize: '13px', letterSpacing: '0.1em' }}>
             LOADING...
           </p>

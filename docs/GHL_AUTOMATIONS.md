@@ -69,6 +69,8 @@ Implementation note:
 |---|---|---|
 | Nurse completes signup | `nurse.signup_confirmed` | NRS-03 |
 | Nurse uploads document | `nurse.document_uploaded` | NRS-04 |
+| Nurse reaches 100% profile | `nurse.profile_completed` | NRS-04 internal/admin branch |
+| Nurse matched with job | `nurse.job_matched` | Move to Stage 6 (Job Matched) |
 | Application status → interview | `application.interview_scheduled` | NRS-05 (partial) |
 | Application status → hired | `application.hired` | NRS-05 |
 | User inactive 90d or suspended | `nurse-inactive` | Inactivity workflow (NRS-01 exit) |

@@ -4,6 +4,8 @@ const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sync')
 const { dispatchPortalEvent } = require('../lib/portal-events')
+const { syncNurseCompletionByUserId } = require('../lib/nurse-completion')
+const { notifyAdmins } = require('../lib/notifications')
 
 router.post('/ghl/sync-self', requireAuth, requireRole('nurse', 'employer'), async (req, res) => {
   try {
@@ -59,7 +61,7 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
     if (req.user.role === 'nurse') {
       const { data: nurse } = await supabase
         .from('nurse_profiles')
-        .select('id, specialty, license_state')
+        .select('id, specialty, license_state, ghl_contact_id')
         .eq('user_id', req.user.id)
         .single()
 
@@ -74,10 +76,24 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
         fullName: req.user.full_name,
         specialty: nurse.specialty,
         licenseState: nurse.license_state,
+        ghlContactId: nurse.ghl_contact_id || null,
         ...payload
       }, {
         sync: { type: 'nurse', id: nurse.id }
       })
+
+      if (event === 'nurse.signup_confirmed') {
+        await notifyAdmins({
+          type: 'nurse.signup_confirmed',
+          title: 'New nurse signup',
+          body: `${req.user.full_name || req.user.email} created a portal account.`,
+          entityType: 'nurse_profile',
+          entityId: nurse.id,
+          metadata: {
+            specialty: nurse.specialty || null
+          }
+        })
+      }
 
       return res.json({ message: 'Event forwarded to n8n', event })
     }
@@ -104,6 +120,16 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
       sync: { type: 'employer', id: employer.id }
     })
 
+    if (event === 'employer.signup_confirmed') {
+      await notifyAdmins({
+        type: 'employer.signup_confirmed',
+        title: 'New employer signup',
+        body: `${employer.org_name || req.user.full_name || req.user.email} created a portal account.`,
+        entityType: 'employer_profile',
+        entityId: employer.id
+      })
+    }
+
     return res.json({ message: 'Event forwarded to n8n', event })
   } catch (error) {
     console.error('Failed to forward self event to n8n:', error.response?.data || error.message)
@@ -111,6 +137,16 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
       error: 'Failed to forward event to n8n',
       details: error.response?.data || error.message
     })
+  }
+})
+
+router.post('/nurse/profile-completion', requireAuth, requireRole('nurse'), async (req, res) => {
+  try {
+    const result = await syncNurseCompletionByUserId(req.user.id)
+    res.json(result)
+  } catch (error) {
+    console.error('Failed to sync nurse profile completion:', error.message)
+    res.status(500).json({ error: 'Failed to sync nurse profile completion' })
   }
 })
 

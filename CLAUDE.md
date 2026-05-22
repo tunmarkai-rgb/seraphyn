@@ -2,7 +2,7 @@
 # Master Project Reference
 
 > Reference `docs/` for detailed implementation notes on database, GHL, payments/contracts, and n8n.
-> M2 is now centered on offline billing, GHL Documents, and n8n automation.
+> M2 is now centered on offline billing, portal-native employer contracts, GHL CRM automation, and n8n orchestration.
 
 ---
 
@@ -26,8 +26,8 @@ Two-sided healthcare staffing marketplace.
 | Frontend | React + Vite | Live |
 | Backend | Node.js + Express | Live |
 | Database | Supabase PostgreSQL | Live |
-| CRM + Contracts | GoHighLevel + GHL Documents | M2 active |
-| AI Automation | n8n + OpenAI | M2 active |
+| CRM + Legacy Contract Fallback | GoHighLevel + GHL Documents | M2 active |
+| AI Automation | n8n + Claude (Anthropic) | M2 active |
 | Payments | Offline only | M2 active |
 | Hosting | Vercel (frontend) + DigitalOcean droplet (backend) + Docker/Caddy (n8n + public proxy) | Live |
 
@@ -36,13 +36,14 @@ Two-sided healthcare staffing marketplace.
 ## Ground Rules
 
 1. Payments stay offline in M2. Do not wire Stripe or GHL payment links into the portal.
-2. Contracts are sent and signed through GHL Documents.
+2. Employer agreements are signed in the portal by default. GHL Documents remains a fallback path only.
 3. The portal remains the source of truth for app state, access control, and onboarding status.
 4. n8n owns async automation: resume parsing, job matching, screening, and contact sync orchestration.
 5. GHL owns contact-facing notification delivery for approved business email/SMS sequences in M2.
 6. Canonical employer onboarding states are `profile`, `contract`, and `approved`.
 7. Supabase secret credentials stay server-only; Supabase publishable key stays frontend-safe only.
 8. Build must pass before closeout: `npm run build` in `client/`.
+9. Supabase Auth currently owns signup confirmation and password reset delivery; those auth emails are branded and sent through Resend SMTP, not GHL.
 
 ---
 
@@ -80,6 +81,7 @@ seraphyn/
 ```env
 VITE_SUPABASE_URL=https://rchydpjwyfpxuexnipwk.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=[publishable key]
+VITE_APP_URL=https://staffing.seraphyncare.com
 VITE_API_URL=https://api.seraphyncare.com
 ```
 
@@ -101,7 +103,7 @@ GHL_WEBHOOK_SECRET=[shared secret for /api/webhooks/ghl]
 GHL_WORKFLOW_WEBHOOK_URL=[recommended shared inbound GHL workflow webhook for fastest launch]
 GHL_WORKFLOW_WEBHOOK_SECRET=[shared secret for portal milestone webhooks]
 
-OPENAI_API_KEY=[openai key for n8n]
+ANTHROPIC_API_KEY=[anthropic key for n8n]
 N8N_WEBHOOK_URL=[optional inbound event webhook from portal to n8n]
 N8N_WEBHOOK_SECRET=[shared secret for portal -> n8n webhook]
 CLIENT_URLS=[optional comma-separated frontend origins for backend CORS]
@@ -111,6 +113,33 @@ CORS_ORIGINS=[optional comma-separated override for allowed frontend origins]
 Notes:
 - The backend accepts either `SUPABASE_SERVICE_KEY` or `SUPABASE_SECRET_KEY`.
 - On the current DigitalOcean production droplet, public routing is handled by the existing Docker/Caddy stack, not by Nginx.
+- The frontend uses `VITE_APP_URL` when building auth email redirect targets so confirmation and reset links do not fall back to localhost.
+- The nurse lead bridge in production currently expects `x-seraphyn-secret: seraphyn2026!` for the GHL nurse lead webhook action.
+- Employer contract emails now go through Resend with attachments and `cc` support when agreements are signed in the portal.
+
+---
+
+## Auth Status
+
+Current live auth flow state:
+
+- Signup confirmation route is live at `https://staffing.seraphyncare.com/auth/confirm`
+- Password reset request page is live at `https://staffing.seraphyncare.com/forgot-password`
+- Password reset completion route is live at `https://staffing.seraphyncare.com/auth/reset-password`
+- Vercel production frontend has already been redeployed with both routes
+- Supabase `Site URL` should remain `https://staffing.seraphyncare.com`
+- Supabase Redirect URLs should include:
+  - `https://staffing.seraphyncare.com/auth/confirm`
+  - `https://staffing.seraphyncare.com/auth/reset-password`
+- Resend SMTP is now connected to Supabase for branded auth email delivery
+
+Behavior notes:
+
+- Email confirmation should redirect confirmed nurses into `/nurse/dashboard`
+- Confirmed employers are redirected into `/employer/onboarding`
+- Reset-password links should land on `/auth/reset-password` and then return the user to `/login?reset=1` after a successful password change
+- `nurse.signup_confirmed` is fired after email confirmation succeeds, not immediately at signup creation
+- The public homepage at `/` is guest-facing only; signed-in nurses/employers are redirected to their dashboards and admins to `/admin`
 
 ---
 
@@ -119,7 +148,7 @@ Notes:
 | Stage | Value | Meaning |
 |---|---|---|
 | 1 | `profile` | Employer has created account / organization profile |
-| 2 | `contract` | GHL staffing agreement is pending or sent |
+| 2 | `contract` | agreement review / signing stage |
 | 3 | `approved` | Contract signed and team approved account |
 
 Approved employers get full portal access. Unsanctioned or mid-onboarding employers remain restricted.
@@ -142,15 +171,22 @@ All billing is offline for M2.
 
 ## Contracts Model
 
-- Admin sends staffing agreements from the portal through `POST /api/admin/employers/:id/send-contract`
-- GHL Documents delivers the contract to the employer
-- `POST /api/webhooks/ghl` handles `DocumentSigned`
+- Portal-native signing is the primary employer contract path.
+- Step 2 of employer onboarding shows onboarding guidance plus both required agreements:
+  - Direct Hire Agreement
+  - Per Diem Staffing Agreement
+- `POST /api/employers/contracts/sign` signs both agreements in one session, appends an audit page to each PDF, stores them in private Supabase storage, emails both signed copies to the employer, and CCs `kundayiw@gmail.com`.
 - Signed documents update:
   - `contracts.status`
-  - `contracts.signed_url`
+  - `contracts.document_type`
+  - `contracts.signed_storage_path`
+  - `contracts.signed_by_*`
+  - `contracts.signature_audit`
   - `employer_profiles.contract_signed`
   - `employer_profiles.contract_signed_at`
-- Admin approval is still the final step before dashboard access
+- `GET /api/contracts/:id/download` serves private signed download links for employers and admins.
+- `POST /api/admin/employers/:id/send-contract` still exists as the legacy GHL fallback path when needed.
+- Admin approval is still the final step before dashboard access.
 
 ---
 
@@ -168,7 +204,7 @@ Supabase webhooks should trigger the core n8n flows. Optional portal-to-n8n even
 
 Current production n8n state:
 - `Seraphyn - Portal Events Inbound` is live in production as workflow `xh5ruX7lGR9m8vIE`
-- `Seraphyn - Resume Parser` has been exported to production as workflow `xFl2h0aUGWqK7Zsb` and remains inactive until a real OpenAI API key is set
+- `Seraphyn - Resume Parser` has been exported to production as workflow `xFl2h0aUGWqK7Zsb` and remains inactive until a real Anthropic API key is set
 - native n8n credentials now hold the shared webhook secret and Supabase auth, so workflow JSON exports should not embed credentials directly
 - GHL is the approved owner for contact-facing notifications in M2; n8n remains the orchestrator behind those triggers
 
@@ -184,9 +220,11 @@ Current production n8n state:
 
 ### M2 Deliverables
 
-- GHL Documents contract send + signed webhook flow
+- Portal-native employer contract signing + signed PDF delivery
+- GHL contract send/resend preserved as fallback
 - Employer onboarding aligned to `profile -> contract -> approved`
 - Admin contract send/resend controls
+- Nurse certification proof uploads + private document access
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
 - Approval and application transitions routed through server hooks where needed
@@ -197,10 +235,10 @@ Current production n8n state:
 
 - Payments are offline by decision, not by blocker
 - GHL contact sync must exist before contract send can succeed
-- Signed-contract matching currently reuses `contracts.docuseal_submission_id` as a legacy storage field for the GHL document reference until a schema cleanup happens
+- The `contracts` table now supports one row per agreement document. Legacy GHL sends may still reuse `docuseal_submission_id` as an external reference field.
 - Admin UI still uses a mix of Supabase-direct and API-driven actions; approval and contract actions should prefer the server routes
 - Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides available later via `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
-- Resume parser production activation is blocked until the real `OPENAI_API_KEY` is loaded into the native n8n `Seraphyn OpenAI API` credential
+- Resume parser production activation is blocked until the real `ANTHROPIC_API_KEY` is loaded into the native n8n `Seraphyn Anthropic API` credential
 
 ---
 

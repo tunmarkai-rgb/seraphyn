@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../middleware/auth')
 const { sendContractTemplate } = require('../lib/ghl')
 const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sync')
 const { dispatchPortalEvent } = require('../lib/portal-events')
+const { createNotification } = require('../lib/notifications')
 
 // All admin routes require auth + admin role
 router.use(requireAuth, requireRole('admin'))
@@ -270,6 +271,27 @@ router.put('/applications/:id', async (req, res) => {
   const { data, error } = await supabase.from('applications').update(updates).eq('id', req.params.id).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
+  const { data: nurseProfile } = await supabase
+    .from('nurse_profiles')
+    .select('user_id')
+    .eq('id', data.nurse_id)
+    .maybeSingle()
+
+  if (nurseProfile?.user_id && status) {
+    await createNotification({
+      userId: nurseProfile.user_id,
+      type: 'application.status_changed',
+      title: 'Application updated',
+      body: `Your application status is now ${status}.`,
+      entityType: 'application',
+      entityId: data.id,
+      metadata: {
+        status,
+        jobId: data.job_id
+      }
+    })
+  }
+
   if (status === 'interview') {
     void dispatchPortalEvent('application.interview_scheduled', {
       applicationId: data.id,
@@ -290,6 +312,43 @@ router.put('/applications/:id', async (req, res) => {
   }
 
   res.json(data)
+})
+
+router.post('/nurses/:id/job-matched', async (req, res) => {
+  const { data: nurse } = await supabase
+    .from('nurse_profiles')
+    .select('id, user_id, specialty')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!nurse) {
+    return res.status(404).json({ error: 'Nurse not found' })
+  }
+
+  await dispatchPortalEvent('nurse.job_matched', {
+    nurseId: nurse.id,
+    nurseUserId: nurse.user_id,
+    specialty: nurse.specialty,
+    jobId: req.body?.jobId || null
+  }, {
+    sync: { type: 'nurse', id: nurse.id }
+  })
+
+  if (nurse.user_id) {
+    await createNotification({
+      userId: nurse.user_id,
+      type: 'nurse.job_matched',
+      title: 'A new job match is ready',
+      body: 'Seraphyn found a new job match for your profile.',
+      entityType: 'nurse_profile',
+      entityId: nurse.id,
+      metadata: {
+        jobId: req.body?.jobId || null
+      }
+    })
+  }
+
+  res.json({ message: 'Job matched event dispatched' })
 })
 
 module.exports = router

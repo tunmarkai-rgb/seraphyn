@@ -9,7 +9,7 @@ This folder tracks the M2 automation bundle for Seraphyn.
   - Workflow ID: `xh5ruX7lGR9m8vIE`
   - Production webhook URL: `https://n8n.seraphyncare.com/webhook/seraphyn-events`
   - Uses native n8n `Header Auth` credential: `Seraphyn Shared Webhook Secret`
-- Exported to production, currently inactive until OpenAI key is populated:
+- Exported to production, currently inactive until Anthropic key is populated:
   - `Seraphyn - Resume Parser`
   - Workflow ID: `xFl2h0aUGWqK7Zsb`
   - Expected production webhook URL after activation: `https://n8n.seraphyncare.com/webhook/seraphyn-resume-parser`
@@ -42,10 +42,10 @@ This folder tracks the M2 automation bundle for Seraphyn.
 
 - `Seraphyn Shared Webhook Secret` (`httpHeaderAuth`)
 - `Seraphyn Supabase API` (`supabaseApi`)
-- `Seraphyn OpenAI API` (`openAiApi`)
+- `Seraphyn Anthropic API` (`anthropicApi`)
 
 Current note:
-- `Seraphyn OpenAI API` is scaffolded with a placeholder value because a real `OPENAI_API_KEY` is not available in this repo environment yet.
+- `Seraphyn Anthropic API` should hold the live `ANTHROPIC_API_KEY` in production.
 
 ## Remaining Workflow Build Order
 
@@ -55,7 +55,7 @@ Trigger:
 - Supabase Storage webhook on `resumes/`
 
 Needs:
-- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - Supabase secret-key access inside n8n
 
 Primary writes:
@@ -69,7 +69,7 @@ Current assumptions in that workflow:
 - supported file types: `pdf`, `rtf`, `txt`
 - resume bucket is public-read, so the workflow downloads from Supabase public storage URL
 - nurse lookup is done by matching `nurse_profiles.resume_url` against the uploaded object path or public URL
-- OpenAI now points at the native `Seraphyn OpenAI API` credential in n8n
+- the resume parser now targets the native n8n AI Agent path with the `Seraphyn Anthropic API` credential
 - Supabase reads through the native `Seraphyn Supabase API` credential in n8n
 - inbound webhook auth now uses the native `Seraphyn Shared Webhook Secret` credential in n8n
 
@@ -79,7 +79,7 @@ Trigger:
 - Supabase DB webhook on approved or updated nurse profile
 
 Needs:
-- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - Supabase secret-key access inside n8n
 
 Primary writes:
@@ -91,7 +91,7 @@ Trigger:
 - Supabase DB webhook on `applications` insert
 
 Needs:
-- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - Supabase secret-key access inside n8n
 
 Primary writes:
@@ -134,6 +134,6 @@ Suggested paths in n8n:
 
 ## Open Blockers
 
-- real `OPENAI_API_KEY` not available yet, so resume parser remains inactive
+- real `ANTHROPIC_API_KEY` not available yet, so resume parser remains inactive
 - production backend host still unknown
 - GHL signed-document webhook still needs to be configured in HighLevel

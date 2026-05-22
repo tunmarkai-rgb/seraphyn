@@ -13,6 +13,7 @@ export default function NurseProfile() {
   const navigate = useNavigate()
   const resumeRef = useRef()
   const licenseRef = useRef()
+  const certificationRef = useRef()
 
   const [form, setForm] = useState({
     first_name: '', last_name: '', specialty: '', license_number: '',
@@ -21,9 +22,11 @@ export default function NurseProfile() {
   })
   const [resumeUrl, setResumeUrl] = useState('')
   const [licenseUrl, setLicenseUrl] = useState('')
+  const [certificationDocs, setCertificationDocs] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadingResume, setUploadingResume] = useState(false)
   const [uploadingLicense, setUploadingLicense] = useState(false)
+  const [uploadingCertification, setUploadingCertification] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
@@ -37,21 +40,31 @@ export default function NurseProfile() {
       .select('*')
       .eq('user_id', user.id)
       .single()
-    if (data) {
-      setResumeUrl(data.resume_url || '')
-      setLicenseUrl(data.license_url || '')
-      setForm({
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        specialty: data.specialty || '',
-        license_number: data.license_number || '',
-        license_state: data.license_state || '',
-        years_experience: data.years_experience || '',
-        shift_preference: data.shift_preference || '',
-        availability: data.availability || '',
-        bio: data.bio || '',
-        certifications: data.certifications || []
-      })
+    const metadata = user.user_metadata || {}
+    const source = data || {}
+
+    setResumeUrl(source.resume_url || '')
+    setLicenseUrl(source.license_url || '')
+    setForm({
+      first_name: source.first_name || metadata.first_name || '',
+      last_name: source.last_name || metadata.last_name || '',
+      specialty: source.specialty || metadata.specialty || '',
+      license_number: source.license_number || '',
+      license_state: source.license_state || metadata.license_state || '',
+      years_experience: source.years_experience || metadata.years_experience || '',
+      shift_preference: source.shift_preference || metadata.shift_preference || '',
+      availability: source.availability || '',
+      bio: source.bio || '',
+      certifications: source.certifications || []
+    })
+
+    try {
+      const docs = await apiRequest(`/api/nurses/${source.id || data?.id}/documents`)
+      setCertificationDocs(docs || [])
+    } catch (docsError) {
+      if (!/Complete employer onboarding/i.test(docsError.message)) {
+        console.error('Failed to load certification documents:', docsError.message)
+      }
     }
   }
 
@@ -92,6 +105,13 @@ export default function NurseProfile() {
     const publicUrl = await uploadFile(file, 'resumes', setUploadingResume, setResumeUrl)
     if (publicUrl) {
       try {
+        await supabase
+          .from('nurse_profiles')
+          .upsert({
+            user_id: user.id,
+            resume_url: publicUrl,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' })
         await apiRequest('/api/integrations/events/self', {
           method: 'POST',
           body: {
@@ -102,6 +122,9 @@ export default function NurseProfile() {
               fileUrl: publicUrl
             }
           }
+        })
+        await apiRequest('/api/integrations/nurse/profile-completion', {
+          method: 'POST'
         })
       } catch (eventError) {
         console.error('Resume upload event failed:', eventError.message)
@@ -115,6 +138,13 @@ export default function NurseProfile() {
     const publicUrl = await uploadFile(file, 'licenses', setUploadingLicense, setLicenseUrl)
     if (publicUrl) {
       try {
+        await supabase
+          .from('nurse_profiles')
+          .upsert({
+            user_id: user.id,
+            license_url: publicUrl,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' })
         await apiRequest('/api/integrations/events/self', {
           method: 'POST',
           body: {
@@ -126,9 +156,57 @@ export default function NurseProfile() {
             }
           }
         })
+        await apiRequest('/api/integrations/nurse/profile-completion', {
+          method: 'POST'
+        })
       } catch (eventError) {
         console.error('License upload event failed:', eventError.message)
       }
+    }
+  }
+
+  async function handleCertificationUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingCertification(true)
+    setError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('title', file.name.replace(/\.[^.]+$/, ''))
+      const created = await apiRequest('/api/nurses/documents/certifications', {
+        method: 'POST',
+        body: formData
+      })
+      setCertificationDocs((current) => [created, ...current])
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setUploadingCertification(false)
+      if (certificationRef.current) {
+        certificationRef.current.value = ''
+      }
+    }
+  }
+
+  async function openCertification(documentId) {
+    try {
+      const data = await apiRequest(`/api/nurses/documents/${documentId}/download`)
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (downloadError) {
+      setError(downloadError.message)
+    }
+  }
+
+  async function removeCertification(documentId) {
+    try {
+      await apiRequest(`/api/nurses/documents/${documentId}`, { method: 'DELETE' })
+      setCertificationDocs((current) => current.filter((doc) => doc.id !== documentId))
+    } catch (deleteError) {
+      setError(deleteError.message)
     }
   }
 
@@ -148,6 +226,9 @@ export default function NurseProfile() {
         .from('nurse_profiles')
         .upsert({ ...updates, user_id: user.id }, { onConflict: 'user_id' })
       if (saveError) throw saveError
+      await apiRequest('/api/integrations/nurse/profile-completion', {
+        method: 'POST'
+      })
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {
@@ -293,6 +374,49 @@ export default function NurseProfile() {
                   </button>
                 )
               })}
+            </div>
+
+            <div style={{ marginTop: '20px', paddingTop: '18px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                <div>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '4px' }}>Certification Proof Files</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Upload current certification documents to strengthen your profile.</p>
+                </div>
+                <div>
+                  <input type="file" ref={certificationRef} onChange={handleCertificationUpload} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style={{ display: 'none' }} />
+                  <button type="button" onClick={() => certificationRef.current.click()} disabled={uploadingCertification}
+                    style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', background: 'transparent', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                    {uploadingCertification ? 'Uploading...' : 'Upload Proof'}
+                  </button>
+                </div>
+              </div>
+
+              {certificationDocs.length === 0 ? (
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No certification proof files uploaded yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {certificationDocs.map((doc) => (
+                    <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', border: '1px solid var(--border)', borderRadius: '4px', flexWrap: 'wrap' }}>
+                      <div>
+                        <p style={{ fontSize: '13px', color: 'var(--deep-navy)', fontWeight: '500' }}>{doc.title}</p>
+                        <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Uploaded {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => openCertification(doc.id)}
+                          style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', background: 'transparent', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                          View
+                        </button>
+                        <button type="button" onClick={() => removeCertification(doc.id)}
+                          style={{ padding: '8px 14px', border: '1px solid rgba(180,60,60,0.25)', background: 'transparent', color: '#B43C3C', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
