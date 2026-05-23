@@ -9,6 +9,26 @@ function hasValue(value) {
   return true
 }
 
+function normalizeShiftPreference(value, fallback = null) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return fallback
+  if (raw === 'any') return 'any'
+
+  const legacyAnyValues = new Set([
+    'day',
+    'night',
+    'evening',
+    'mixed',
+    'per diem',
+    'contract travel',
+    'permanent',
+    'flexible',
+    'mixed / flexible'
+  ])
+
+  return legacyAnyValues.has(raw) ? 'any' : fallback
+}
+
 async function inferRoleFromProfileTables(userId) {
   if (!userId) return ''
 
@@ -36,7 +56,7 @@ async function bootstrapNurseProfileFromMetadata(user) {
     specialty: metadata.specialty || '',
     license_state: metadata.license_state || '',
     years_experience: hasValue(metadata.years_experience) ? Number(metadata.years_experience) : null,
-    shift_preference: metadata.shift_preference || null
+    shift_preference: normalizeShiftPreference(metadata.shift_preference, null)
   }
 
   const seedFields = Object.entries(profileSeed).filter(([key, value]) => key !== 'user_id' && hasValue(value))

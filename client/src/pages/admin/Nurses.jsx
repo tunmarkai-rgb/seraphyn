@@ -48,6 +48,17 @@ export default function AdminNurses() {
     }
   }
 
+  async function downloadPrimaryFile(nurseId, kind) {
+    try {
+      const data = await apiRequest(`/api/nurses/${nurseId}/files/${kind}/download`)
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (error) {
+      setFeedback(error.message)
+    }
+  }
+
   async function approve(nurseId) {
     setActionLoading(nurseId)
     setFeedback('')

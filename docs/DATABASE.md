@@ -210,3 +210,13 @@
 - Employer agreement signing is now portal-native first. GHL document send remains a legacy fallback path.
 - Nurses can upload resume and license directly into `nurse_profiles` and certification proof files into `nurse_documents`.
 - Admin and approved employers access private nurse certification documents through signed server URLs, not public bucket links.
+- Production nurse profile writes normalize the currently accepted enum-backed values to:
+  - `shift_preference = any`
+  - `availability = available`
+- Legacy nurse metadata values from older signup flows are coerced server-side so profile bootstrap and uploads do not fail on enum mismatches.
+- After the May 23, 2026 cleanup pass, the only intentionally retained baseline users are:
+  - `kundayiw@gmail.com` (admin)
+  - `nurse.test@seraphyn.com` (test nurse)
+  - `employer.test@seraphyn.com` (test employer)
+- The retained seeded test employer still owns the sample jobs/application records used for portal verification.
+- The temporary employer used during contract-signing implementation was removed together with its signed contracts, notifications, and auth account.

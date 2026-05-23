@@ -34,6 +34,26 @@ function normalizeYearsExperience(value) {
   return '15+ years'
 }
 
+function normalizeShiftPreference(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'any') return 'any'
+
+  const legacyAnyValues = new Set([
+    'day',
+    'night',
+    'evening',
+    'mixed',
+    'per diem',
+    'contract travel',
+    'permanent',
+    'flexible',
+    'mixed / flexible'
+  ])
+
+  return legacyAnyValues.has(raw) ? 'any' : ''
+}
+
 export default function NurseSignup() {
   const { signUp } = useAuth()
   const navigate = useNavigate()
@@ -85,7 +105,7 @@ export default function NurseSignup() {
           licenseState: current.licenseState || lead.licenseState || '',
           specialty: current.specialty || lead.specialty || '',
           yearsExperience: current.yearsExperience || normalizeYearsExperience(lead.yearsExperience),
-          shiftPreference: current.shiftPreference || lead.shiftPreference || ''
+          shiftPreference: current.shiftPreference || normalizeShiftPreference(lead.shiftPreference)
         }))
       } catch (prefillError) {
         if (active) {
@@ -126,6 +146,7 @@ export default function NurseSignup() {
         '15+ years': 15
       }
 
+      const normalizedShiftPreference = normalizeShiftPreference(form.shiftPreference)
       const { data, error: signUpError } = await signUp(
         form.email,
         form.password,
@@ -138,7 +159,7 @@ export default function NurseSignup() {
             specialty: form.specialty,
             license_state: form.licenseState,
             years_experience: expMap[form.yearsExperience] || null,
-            shift_preference: form.shiftPreference || null,
+            shift_preference: normalizedShiftPreference || null,
             source: leadContext.source || 'portal-signup',
             ghl_contact_id: leadContext.ghlContactId || null,
             ghl_opportunity_id: leadContext.ghlOpportunityId || null
@@ -156,7 +177,7 @@ export default function NurseSignup() {
           license_state: form.licenseState,
           specialty: form.specialty,
           years_experience: expMap[form.yearsExperience] || null,
-          shift_preference: form.shiftPreference || null
+          shift_preference: normalizedShiftPreference || null
         }, { onConflict: 'user_id' })
 
         if (profileUpsertError) {
@@ -177,7 +198,7 @@ export default function NurseSignup() {
                 payload: {
                   specialty: form.specialty,
                   licenseState: form.licenseState,
-                  shiftPreference: form.shiftPreference,
+                  shiftPreference: normalizedShiftPreference || null,
                   source: leadContext.source || 'portal-signup',
                   ghlContactId: leadContext.ghlContactId || syncResult?.contactId || null,
                   ghlOpportunityId: leadContext.ghlOpportunityId || null
@@ -336,13 +357,7 @@ export default function NurseSignup() {
               <select name="shiftPreference" value={form.shiftPreference} onChange={handle}
                 style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                 <option value="">Select...</option>
-                <option value="Day">Day Shift</option>
-                <option value="Night">Night Shift</option>
-                <option value="Evening">Evening Shift</option>
-                <option value="Mixed">Mixed / Flexible</option>
-                <option value="Per Diem">Per Diem</option>
-                <option value="Contract Travel">Contract Travel</option>
-                <option value="Permanent">Permanent</option>
+                <option value="any">Flexible / Any Shift</option>
               </select>
             </div>
 

@@ -234,7 +234,7 @@ router.post('/contracts/sign', requireSessionUser, async (req, res) => {
     await sendSignedContractEmail({
       employerEmail: publicUser.email || req.authUser.email,
       employerName: employer.contact_name || signerName,
-      ccEmail: 'kundayiw@gmail.com',
+      ccEmail: 'info@seraphyncare.com',
       contracts: signResult.contracts
     })
 

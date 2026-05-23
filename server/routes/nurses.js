@@ -2,8 +2,37 @@ const express = require('express')
 const router = express.Router()
 const multer = require('multer')
 const { supabase } = require('../config/supabase')
-const { requireAuth, requireRole } = require('../middleware/auth')
+const { requireAuth, requireRole, requireSessionUser } = require('../middleware/auth')
+const { ensureNurseProfileRow, ensurePublicUserForAuthUser, normalizeShiftPreference } = require('../lib/user-bootstrap')
 const upload = multer({ storage: multer.memoryStorage() })
+
+function isNurseUser(req) {
+  return req.user?.role === 'nurse' || req.authUser?.user_metadata?.role === 'nurse'
+}
+
+async function ensureCurrentNurseProfile(req) {
+  const authUser = req.authUser || req.user
+  const publicUser = await ensurePublicUserForAuthUser(authUser, 'nurse')
+  const metadata = authUser?.user_metadata || {}
+  const yearsExperience = metadata.years_experience
+  return ensureNurseProfileRow(publicUser.id, {
+    first_name: metadata.first_name || '',
+    last_name: metadata.last_name || '',
+    specialty: metadata.specialty || '',
+    license_state: metadata.license_state || '',
+    years_experience: yearsExperience !== undefined && yearsExperience !== null && String(yearsExperience).trim() !== ''
+      ? Number(yearsExperience)
+      : null,
+    shift_preference: normalizeShiftPreference(metadata.shift_preference || '', null)
+  })
+}
+
+async function createPrivateFileUrl(bucket, path) {
+  if (!path) return ''
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 10)
+  if (error) throw error
+  return data?.signedUrl || ''
+}
 
 async function employerHasFullAccess(userId) {
   const { data: ep } = await supabase
@@ -59,7 +88,123 @@ router.get('/featured', async (req, res) => {
   res.json(data)
 })
 
-router.get('/:id/documents', requireAuth, requireRole('admin', 'employer'), async (req, res) => {
+router.post('/self/bootstrap', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const resumeUrl = await createPrivateFileUrl('resumes', profile.resume_url)
+    const licenseUrl = await createPrivateFileUrl('licenses', profile.license_url)
+
+    res.json({
+      profile,
+      fileUrls: {
+        resume: resumeUrl,
+        license: licenseUrl
+      }
+    })
+  } catch (error) {
+    console.error('Nurse profile bootstrap failed:', error.message)
+    res.status(500).json({ error: error.message || 'Failed to prepare nurse profile' })
+  }
+})
+
+router.get('/self/files/:kind/download', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const kind = req.params.kind
+    const bucket = kind === 'resume' ? 'resumes' : kind === 'license' ? 'licenses' : ''
+    const filePath = kind === 'resume' ? profile.resume_url : kind === 'license' ? profile.license_url : ''
+
+    if (!bucket) {
+      return res.status(400).json({ error: 'Unsupported document type' })
+    }
+    if (!filePath) {
+      return res.status(404).json({ error: 'File not uploaded yet' })
+    }
+
+    const url = await createPrivateFileUrl(bucket, filePath)
+    res.json({ url, filePath })
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to create signed file URL' })
+  }
+})
+
+router.post('/self/files/:kind', requireSessionUser, upload.single('file'), async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'File is required' })
+    }
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const kind = req.params.kind
+    const bucket = kind === 'resume' ? 'resumes' : kind === 'license' ? 'licenses' : ''
+    const profileField = kind === 'resume' ? 'resume_url' : kind === 'license' ? 'license_url' : ''
+
+    if (!bucket || !profileField) {
+      return res.status(400).json({ error: 'Unsupported document type' })
+    }
+
+    const extension = req.file.originalname.includes('.') ? req.file.originalname.split('.').pop() : 'pdf'
+    const filePath = `${profile.id}/${kind}-${Date.now()}.${extension}`
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, req.file.buffer, {
+      contentType: req.file.mimetype || 'application/octet-stream',
+      upsert: true
+    })
+
+    if (uploadError) {
+      return res.status(500).json({ error: uploadError.message })
+    }
+
+    const now = new Date().toISOString()
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from('nurse_profiles')
+      .update({
+        [profileField]: filePath,
+        updated_at: now
+      })
+      .eq('id', profile.id)
+      .select('*')
+      .single()
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message })
+    }
+
+    const downloadUrl = await createPrivateFileUrl(bucket, filePath)
+    res.json({
+      filePath,
+      downloadUrl,
+      profile: updatedProfile
+    })
+  } catch (error) {
+    console.error('Nurse file upload failed:', error.message)
+    res.status(500).json({ error: error.message || 'Failed to upload file' })
+  }
+})
+
+router.get('/:id/documents', requireAuth, requireRole('nurse', 'admin', 'employer'), async (req, res) => {
+  if (req.user.role === 'nurse') {
+    const { data: nurse } = await supabase
+      .from('nurse_profiles')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .single()
+
+    if (!nurse?.id || nurse.id !== req.params.id) {
+      return res.status(403).json({ error: 'Not authorized to access these documents' })
+    }
+  }
+
   if (req.user.role === 'employer') {
     const allowed = await employerHasFullAccess(req.user.id)
     if (!allowed) {
@@ -76,6 +221,49 @@ router.get('/:id/documents', requireAuth, requireRole('admin', 'employer'), asyn
 
   if (error) return res.status(500).json({ error: error.message })
   res.json(data || [])
+})
+
+router.get('/:id/files/:kind/download', requireAuth, requireRole('nurse', 'admin', 'employer'), async (req, res) => {
+  const kind = req.params.kind
+  const bucket = kind === 'resume' ? 'resumes' : kind === 'license' ? 'licenses' : ''
+  const profileField = kind === 'resume' ? 'resume_url' : kind === 'license' ? 'license_url' : ''
+
+  if (!bucket || !profileField) {
+    return res.status(400).json({ error: 'Unsupported document type' })
+  }
+
+  const { data: nurse, error } = await supabase
+    .from('nurse_profiles')
+    .select(`id, user_id, ${profileField}`)
+    .eq('id', req.params.id)
+    .single()
+
+  if (error || !nurse) {
+    return res.status(404).json({ error: 'Nurse not found' })
+  }
+
+  if (req.user.role === 'nurse' && nurse.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Not authorized to access this file' })
+  }
+
+  if (req.user.role === 'employer') {
+    const allowed = await employerHasFullAccess(req.user.id)
+    if (!allowed) {
+      return res.status(403).json({ error: 'Complete employer onboarding before viewing private nurse documents' })
+    }
+  }
+
+  const filePath = nurse[profileField]
+  if (!filePath) {
+    return res.status(404).json({ error: 'File not uploaded yet' })
+  }
+
+  try {
+    const url = await createPrivateFileUrl(bucket, filePath)
+    res.json({ url, filePath })
+  } catch (signedError) {
+    res.status(500).json({ error: signedError.message })
+  }
 })
 
 router.get('/documents/:documentId/download', requireAuth, requireRole('nurse', 'admin', 'employer'), async (req, res) => {
@@ -120,22 +308,16 @@ router.get('/documents/:documentId/download', requireAuth, requireRole('nurse', 
   res.json({ url: signed?.signedUrl || '' })
 })
 
-router.post('/documents/certifications', requireAuth, requireRole('nurse'), upload.single('file'), async (req, res) => {
+router.post('/documents/certifications', requireSessionUser, upload.single('file'), async (req, res) => {
+  if (!isNurseUser(req)) {
+    return res.status(403).json({ error: 'Nurse access required' })
+  }
   if (!req.file) {
     return res.status(400).json({ error: 'Certification file is required' })
   }
 
   const title = String(req.body?.title || req.file.originalname || 'Certification').trim()
-
-  const { data: nurse, error: nurseError } = await supabase
-    .from('nurse_profiles')
-    .select('id')
-    .eq('user_id', req.user.id)
-    .single()
-
-  if (nurseError || !nurse?.id) {
-    return res.status(404).json({ error: 'Nurse profile not found' })
-  }
+  const nurse = await ensureCurrentNurseProfile(req)
 
   const fileExt = req.file.originalname.includes('.') ? req.file.originalname.split('.').pop() : 'pdf'
   const filePath = `${nurse.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
@@ -169,16 +351,11 @@ router.post('/documents/certifications', requireAuth, requireRole('nurse'), uplo
   res.json(data)
 })
 
-router.delete('/documents/:documentId', requireAuth, requireRole('nurse'), async (req, res) => {
-  const { data: nurse } = await supabase
-    .from('nurse_profiles')
-    .select('id')
-    .eq('user_id', req.user.id)
-    .single()
-
-  if (!nurse?.id) {
-    return res.status(404).json({ error: 'Nurse profile not found' })
+router.delete('/documents/:documentId', requireSessionUser, async (req, res) => {
+  if (!isNurseUser(req)) {
+    return res.status(403).json({ error: 'Nurse access required' })
   }
+  const nurse = await ensureCurrentNurseProfile(req)
 
   const { data: document, error } = await supabase
     .from('nurse_documents')

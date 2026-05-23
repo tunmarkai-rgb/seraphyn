@@ -48,7 +48,7 @@ Payments do not run through Stripe, GHL payment links, or portal checkout in M2.
    - upserts one `contracts` row per agreement document
    - sets `employer_profiles.contract_signed = true`
    - emails both signed PDFs to the employer
-   - CCs `kundayiw@gmail.com`
+   - CCs `info@seraphyncare.com`
 6. Employer moves to Step 3 pending approval.
 7. Admin approval remains the final unlock for dashboard access.
 

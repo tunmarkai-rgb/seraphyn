@@ -2,6 +2,15 @@
 
 This is the shortest path to finish the nurse funnel rollout from the current live state.
 
+Current baseline after cleanup:
+
+- Only three core accounts are intentionally retained in production data:
+  - `kundayiw@gmail.com` (admin)
+  - `nurse.test@seraphyn.com` (test nurse)
+  - `employer.test@seraphyn.com` (test employer)
+- The top-level repo `tests/` directory and `tmp/` scratch artifacts were removed.
+- The retained test employer still owns the sample jobs/application data used for portal verification.
+
 ## Already done
 
 - Portal frontend is deployed on `https://staffing.seraphyncare.com`
@@ -10,6 +19,10 @@ This is the shortest path to finish the nurse funnel rollout from the current li
 - In-app notifications API is live
 - Message email delivery is configured through Resend
 - Nurse lead token prefill is live
+- Nurse profile uploads are live for:
+  - resume
+  - nursing license
+  - certification proof documents
 - Nurse signup redirect to the generic portal signup page is live from the GHL form
 - Nurse lead token now supports:
   - `ghlContactId`
@@ -57,6 +70,9 @@ Important:
 - `ghlOpportunityId` is now preferred for the cleanest nurse funnel stage progression.
 - Without `ghlOpportunityId`, the portal can still prefill signup, but GHL opportunity updates are less reliable.
 - The current GHL workflow node may omit `ghlOpportunityId` if HighLevel does not expose an opportunity merge field there.
+- The nurse profile flow now normalizes older lead/signup values to the live stored values required by production:
+  - `shift_preference -> any`
+  - `availability -> available`
 
 Current live redirect path:
 

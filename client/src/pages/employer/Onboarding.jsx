@@ -587,6 +587,18 @@ export default function EmployerOnboarding() {
               </div>
             )}
 
+            {!empProfile?.approved_at && (
+              <div style={{ marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => navigate('/employer/dashboard')}
+                  style={{ padding: '12px 32px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}
+                >
+                  Open Dashboard {'->'}
+                </button>
+              </div>
+            )}
+
             {empProfile?.approved_at && (
               <button onClick={() => navigate('/employer/dashboard')}
                 style={{ padding: '12px 32px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>

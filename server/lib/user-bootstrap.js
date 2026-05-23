@@ -6,6 +6,43 @@ function hasValue(value) {
   return true
 }
 
+function normalizeShiftPreference(value, fallback = null) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return fallback
+
+  if (raw === 'any') return 'any'
+
+  const legacyAnyValues = new Set([
+    'day',
+    'night',
+    'evening',
+    'mixed',
+    'per diem',
+    'contract travel',
+    'permanent',
+    'flexible',
+    'mixed / flexible'
+  ])
+
+  return legacyAnyValues.has(raw) ? 'any' : fallback
+}
+
+function normalizeAvailability(value, fallback = null) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return fallback
+  if (raw === 'available') return 'available'
+
+  const legacyAvailableValues = new Set([
+    'immediately',
+    'available now',
+    '2 weeks',
+    '1 month',
+    'per diem'
+  ])
+
+  return legacyAvailableValues.has(raw) ? 'available' : fallback
+}
+
 async function getPublicUserById(userId) {
   const { data, error } = await supabase
     .from('users')
@@ -101,6 +138,49 @@ async function ensureEmployerProfileRow(userId, seed = {}) {
   return data
 }
 
+async function ensureNurseProfileRow(userId, seed = {}) {
+  const { data: existing, error: existingError } = await supabase
+    .from('nurse_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existingError) throw existingError
+
+  const payload = {
+    ...(existing || {}),
+    user_id: userId,
+    first_name: hasValue(seed.first_name) ? seed.first_name : (existing?.first_name || ''),
+    last_name: hasValue(seed.last_name) ? seed.last_name : (existing?.last_name || ''),
+    specialty: hasValue(seed.specialty) ? seed.specialty : (existing?.specialty || ''),
+    license_number: hasValue(seed.license_number) ? seed.license_number : (existing?.license_number || ''),
+    license_state: hasValue(seed.license_state) ? seed.license_state : (existing?.license_state || ''),
+    years_experience: hasValue(seed.years_experience) ? seed.years_experience : (existing?.years_experience ?? null),
+    availability: normalizeAvailability(
+      hasValue(seed.availability) ? seed.availability : null,
+      existing?.availability ?? null
+    ),
+    shift_preference: normalizeShiftPreference(
+      hasValue(seed.shift_preference) ? seed.shift_preference : null,
+      existing?.shift_preference ?? null
+    ),
+    bio: hasValue(seed.bio) ? seed.bio : (existing?.bio || ''),
+    certifications: Array.isArray(seed.certifications) && seed.certifications.length > 0
+      ? seed.certifications
+      : (existing?.certifications || []),
+    updated_at: new Date().toISOString()
+  }
+
+  const { data, error } = await supabase
+    .from('nurse_profiles')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 async function resolveRoleFromProfileTables(userId) {
   const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
     supabase.from('nurse_profiles').select('user_id').eq('user_id', userId).maybeSingle(),
@@ -115,6 +195,9 @@ async function resolveRoleFromProfileTables(userId) {
 module.exports = {
   ensurePublicUserForAuthUser,
   ensureEmployerProfileRow,
+  ensureNurseProfileRow,
   getPublicUserById,
+  normalizeAvailability,
+  normalizeShiftPreference,
   resolveRoleFromProfileTables
 }

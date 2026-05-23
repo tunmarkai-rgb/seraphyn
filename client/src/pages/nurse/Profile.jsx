@@ -8,6 +8,42 @@ import { apiRequest } from '../../lib/api'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
+function normalizeShiftPreference(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'any') return 'any'
+
+  const legacyAnyValues = new Set([
+    'day',
+    'night',
+    'evening',
+    'mixed',
+    'per diem',
+    'contract travel',
+    'permanent',
+    'flexible',
+    'mixed / flexible'
+  ])
+
+  return legacyAnyValues.has(raw) ? 'any' : ''
+}
+
+function normalizeAvailability(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'available') return 'available'
+
+  const legacyAvailableValues = new Set([
+    'immediately',
+    'available now',
+    '2 weeks',
+    '1 month',
+    'per diem'
+  ])
+
+  return legacyAvailableValues.has(raw) ? 'available' : ''
+}
+
 export default function NurseProfile() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -20,8 +56,11 @@ export default function NurseProfile() {
     license_state: '', years_experience: '', shift_preference: '',
     availability: '', bio: '', certifications: []
   })
+  const [profileId, setProfileId] = useState('')
   const [resumeUrl, setResumeUrl] = useState('')
   const [licenseUrl, setLicenseUrl] = useState('')
+  const [resumePath, setResumePath] = useState('')
+  const [licensePath, setLicensePath] = useState('')
   const [certificationDocs, setCertificationDocs] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadingResume, setUploadingResume] = useState(false)
@@ -35,16 +74,16 @@ export default function NurseProfile() {
   }, [user])
 
   async function loadProfile() {
-    const { data } = await supabase
-      .from('nurse_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
+    const bootstrap = await apiRequest('/api/nurses/self/bootstrap', { method: 'POST' })
+    const data = bootstrap?.profile || null
     const metadata = user.user_metadata || {}
     const source = data || {}
 
-    setResumeUrl(source.resume_url || '')
-    setLicenseUrl(source.license_url || '')
+    setProfileId(source.id || '')
+    setResumePath(source.resume_url || '')
+    setLicensePath(source.license_url || '')
+    setResumeUrl(bootstrap?.fileUrls?.resume || '')
+    setLicenseUrl(bootstrap?.fileUrls?.license || '')
     setForm({
       first_name: source.first_name || metadata.first_name || '',
       last_name: source.last_name || metadata.last_name || '',
@@ -52,18 +91,20 @@ export default function NurseProfile() {
       license_number: source.license_number || '',
       license_state: source.license_state || metadata.license_state || '',
       years_experience: source.years_experience || metadata.years_experience || '',
-      shift_preference: source.shift_preference || metadata.shift_preference || '',
-      availability: source.availability || '',
+      shift_preference: normalizeShiftPreference(source.shift_preference || metadata.shift_preference || ''),
+      availability: normalizeAvailability(source.availability || ''),
       bio: source.bio || '',
       certifications: source.certifications || []
     })
 
-    try {
-      const docs = await apiRequest(`/api/nurses/${source.id || data?.id}/documents`)
-      setCertificationDocs(docs || [])
-    } catch (docsError) {
-      if (!/Complete employer onboarding/i.test(docsError.message)) {
-        console.error('Failed to load certification documents:', docsError.message)
+    if (source.id) {
+      try {
+        const docs = await apiRequest(`/api/nurses/${source.id}/documents`)
+        setCertificationDocs(docs || [])
+      } catch (docsError) {
+        if (!/Complete employer onboarding/i.test(docsError.message)) {
+          console.error('Failed to load certification documents:', docsError.message)
+        }
       }
     }
   }
@@ -79,18 +120,19 @@ export default function NurseProfile() {
     setForm({ ...form, certifications: certs })
   }
 
-  async function uploadFile(file, bucket, setter, setUrl) {
+  async function uploadFile(file, kind, setter, setUrl, setPath) {
     setter(true)
     try {
-      const ext = file.name.split('.').pop()
-      const path = `${user.id}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(path, file, { upsert: true })
-      if (uploadError) throw uploadError
-      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
-      setUrl(publicUrl)
-      return publicUrl
+      const formData = new FormData()
+      formData.append('file', file)
+      const data = await apiRequest(`/api/nurses/self/files/${kind}`, {
+        method: 'POST',
+        body: formData
+      })
+      setUrl(data.downloadUrl || '')
+      setPath(data.filePath || '')
+      setProfileId(data.profile?.id || profileId)
+      return data
     } catch (err) {
       setError(`Upload failed: ${err.message}`)
       return null
@@ -102,16 +144,9 @@ export default function NurseProfile() {
   async function handleResumeUpload(e) {
     const file = e.target.files[0]
     if (!file) return
-    const publicUrl = await uploadFile(file, 'resumes', setUploadingResume, setResumeUrl)
-    if (publicUrl) {
+    const upload = await uploadFile(file, 'resume', setUploadingResume, setResumeUrl, setResumePath)
+    if (upload?.filePath) {
       try {
-        await supabase
-          .from('nurse_profiles')
-          .upsert({
-            user_id: user.id,
-            resume_url: publicUrl,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' })
         await apiRequest('/api/integrations/events/self', {
           method: 'POST',
           body: {
@@ -119,7 +154,7 @@ export default function NurseProfile() {
             payload: {
               documentType: 'resume',
               bucket: 'resumes',
-              fileUrl: publicUrl
+              fileUrl: upload.filePath
             }
           }
         })
@@ -135,16 +170,9 @@ export default function NurseProfile() {
   async function handleLicenseUpload(e) {
     const file = e.target.files[0]
     if (!file) return
-    const publicUrl = await uploadFile(file, 'licenses', setUploadingLicense, setLicenseUrl)
-    if (publicUrl) {
+    const upload = await uploadFile(file, 'license', setUploadingLicense, setLicenseUrl, setLicensePath)
+    if (upload?.filePath) {
       try {
-        await supabase
-          .from('nurse_profiles')
-          .upsert({
-            user_id: user.id,
-            license_url: publicUrl,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' })
         await apiRequest('/api/integrations/events/self', {
           method: 'POST',
           body: {
@@ -152,7 +180,7 @@ export default function NurseProfile() {
             payload: {
               documentType: 'license',
               bucket: 'licenses',
-              fileUrl: publicUrl
+              fileUrl: upload.filePath
             }
           }
         })
@@ -181,7 +209,7 @@ export default function NurseProfile() {
       })
       setCertificationDocs((current) => [created, ...current])
     } catch (uploadError) {
-      setError(uploadError.message)
+      setError(`Upload failed: ${uploadError.message}`)
     } finally {
       setUploadingCertification(false)
       if (certificationRef.current) {
@@ -218,8 +246,10 @@ export default function NurseProfile() {
       const updates = {
         ...form,
         years_experience: form.years_experience ? parseInt(form.years_experience) : null,
-        resume_url: resumeUrl || undefined,
-        license_url: licenseUrl || undefined,
+        shift_preference: normalizeShiftPreference(form.shift_preference) || null,
+        availability: normalizeAvailability(form.availability) || null,
+        resume_url: resumePath || undefined,
+        license_url: licensePath || undefined,
         updated_at: new Date().toISOString()
       }
       const { error: saveError } = await supabase
@@ -313,10 +343,7 @@ export default function NurseProfile() {
                   <label style={labelStyle}>Shift Preference</label>
                   <select name="shift_preference" value={form.shift_preference} onChange={handle} style={inputStyle}>
                     <option value="">Select...</option>
-                    <option value="Day">Day Shift</option>
-                    <option value="Night">Night Shift</option>
-                    <option value="Evening">Evening Shift</option>
-                    <option value="Mixed">Mixed / Flexible</option>
+                    <option value="any">Flexible / Any Shift</option>
                   </select>
                 </div>
               </div>
@@ -324,10 +351,7 @@ export default function NurseProfile() {
                 <label style={labelStyle}>Availability</label>
                 <select name="availability" value={form.availability} onChange={handle} style={inputStyle}>
                   <option value="">Select...</option>
-                  <option value="Immediately">Immediately Available</option>
-                  <option value="2 Weeks">Available in 2 Weeks</option>
-                  <option value="1 Month">Available in 1 Month</option>
-                  <option value="Per Diem">Per Diem Only</option>
+                  <option value="available">Available</option>
                 </select>
               </div>
               <div>
@@ -456,7 +480,11 @@ export default function NurseProfile() {
             </p>
           </section>
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => navigate('/nurse/dashboard')}
+              style={{ padding: '11px 24px', border: '1px solid var(--sky-blue)', background: 'transparent', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
+              Go to Dashboard
+            </button>
             <button type="button" onClick={() => navigate('/nurse/dashboard')}
               style={{ padding: '11px 24px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
               Cancel
