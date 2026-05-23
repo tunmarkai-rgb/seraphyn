@@ -147,8 +147,10 @@ export default function EmployerOnboarding() {
       })
 
       setEmpProfile(result.employer)
-      await syncContact()
-      await apiRequest('/api/integrations/events/self', {
+      setStage(2)
+
+      void syncContact()
+      void apiRequest('/api/integrations/events/self', {
         method: 'POST',
         body: {
           event: 'employer.signup_confirmed',
@@ -159,10 +161,11 @@ export default function EmployerOnboarding() {
             bedCount: form.bed_count ? parseInt(form.bed_count, 10) : null
           }
         }
+      }).catch((forwardError) => {
+        console.error('Employer signup event forwarding failed:', forwardError.message)
       })
 
-      setStage(2)
-      await loadProfile()
+      void loadProfile()
     } catch (err) {
       setError(err.message)
     } finally {
