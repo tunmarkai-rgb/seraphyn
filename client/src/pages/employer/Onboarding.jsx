@@ -1,11 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Document, Page, pdfjs } from 'react-pdf'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 import { US_STATES } from '../../lib/constants'
 import { apiRequest } from '../../lib/api'
-import SignatureCanvas from 'react-signature-canvas'
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString()
+
+const apiBase = import.meta.env.VITE_API_URL || ''
 
 const ORG_TYPES = [
   'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
@@ -37,10 +44,28 @@ const AGREEMENT_CARDS = [
   { documentType: 'staffing_boss', title: 'Per Diem Staffing Agreement' }
 ]
 
+function createSignatureDataUrl(name) {
+  if (typeof document === 'undefined') return ''
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 900
+  canvas.height = 220
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return ''
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#1F3145'
+  ctx.textBaseline = 'middle'
+  ctx.font = '72px "Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive'
+  ctx.fillText(name, 40, 118)
+
+  return canvas.toDataURL('image/png')
+}
+
 export default function EmployerOnboarding() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const signatureRef = useRef(null)
+  const agreementScrollRef = useRef(null)
 
   const [empProfile, setEmpProfile] = useState(null)
   const [contractRecords, setContractRecords] = useState([])
@@ -56,6 +81,18 @@ export default function EmployerOnboarding() {
   const [signatureConsent, setSignatureConsent] = useState(false)
   const [signerName, setSignerName] = useState('')
   const [signerTitle, setSignerTitle] = useState('')
+  const [activeAgreement, setActiveAgreement] = useState(null)
+  const [agreementFiles, setAgreementFiles] = useState({})
+  const [agreementPageCounts, setAgreementPageCounts] = useState({})
+  const [agreementLoading, setAgreementLoading] = useState(false)
+  const [agreementError, setAgreementError] = useState('')
+  const [reviewReady, setReviewReady] = useState(false)
+  const [reviewedAgreements, setReviewedAgreements] = useState({})
+
+  const allAgreementsReviewed = useMemo(
+    () => AGREEMENT_CARDS.every((agreement) => reviewedAgreements[agreement.documentType]),
+    [reviewedAgreements]
+  )
 
   useEffect(() => {
     if (user) void loadProfile()
@@ -90,6 +127,15 @@ export default function EmployerOnboarding() {
     const records = source.contracts || []
     setEmpProfile(source)
     setContractRecords(records)
+    setReviewedAgreements((previous) => {
+      const next = { ...previous }
+      for (const agreement of AGREEMENT_CARDS) {
+        if (records.some((record) => record.document_type === agreement.documentType && record.status === 'signed')) {
+          next[agreement.documentType] = true
+        }
+      }
+      return next
+    })
 
     const STAGE_MAP = { profile: 1, contract: 2, approved: 3 }
     const nextStage = source.onboarding_stage === 'approved'
@@ -167,12 +213,84 @@ export default function EmployerOnboarding() {
       }).catch((forwardError) => {
         console.error('Employer signup event forwarding failed:', forwardError.message)
       })
-
     } catch (err) {
       setError(err.message)
     } finally {
       setSaving(false)
     }
+  }
+
+  async function fetchAgreementBytes(documentType) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) throw new Error('You must be signed in to review agreements')
+
+    const response = await fetch(`${apiBase}/api/contracts/templates/${documentType}`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      let message = 'Failed to load agreement'
+      try {
+        const data = await response.json()
+        message = data.error || message
+      } catch {
+        // no-op
+      }
+      throw new Error(message)
+    }
+
+    const buffer = await response.arrayBuffer()
+    return new Uint8Array(buffer)
+  }
+
+  async function openAgreement(agreement) {
+    setAgreementError('')
+    setReviewReady(false)
+    setActiveAgreement(agreement)
+
+    if (agreementFiles[agreement.documentType]) {
+      return
+    }
+
+    setAgreementLoading(true)
+    try {
+      const bytes = await fetchAgreementBytes(agreement.documentType)
+      setAgreementFiles((previous) => ({
+        ...previous,
+        [agreement.documentType]: bytes
+      }))
+    } catch (loadError) {
+      setAgreementError(loadError.message)
+    } finally {
+      setAgreementLoading(false)
+    }
+  }
+
+  function closeAgreementModal() {
+    setActiveAgreement(null)
+    setAgreementError('')
+    setReviewReady(false)
+  }
+
+  function onAgreementScroll(event) {
+    const target = event.currentTarget
+    const atBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 16
+    if (atBottom) {
+      setReviewReady(true)
+    }
+  }
+
+  function markAgreementReviewed() {
+    if (!activeAgreement || !reviewReady) return
+
+    setReviewedAgreements((previous) => ({
+      ...previous,
+      [activeAgreement.documentType]: true
+    }))
+    closeAgreementModal()
   }
 
   async function downloadContract(contractId) {
@@ -188,6 +306,10 @@ export default function EmployerOnboarding() {
 
   async function signContracts() {
     setError('')
+    if (!allAgreementsReviewed) {
+      setError('Review both agreements to the end before signing.')
+      return
+    }
     if (!signatureConsent) {
       setError('You must consent to electronic signing before continuing.')
       return
@@ -196,8 +318,10 @@ export default function EmployerOnboarding() {
       setError('Signer name is required.')
       return
     }
-    if (!signatureRef.current || signatureRef.current.isEmpty()) {
-      setError('Please provide your signature before continuing.')
+
+    const signatureDataUrl = createSignatureDataUrl(signerName.trim())
+    if (!signatureDataUrl) {
+      setError('Failed to generate electronic signature preview.')
       return
     }
 
@@ -208,7 +332,7 @@ export default function EmployerOnboarding() {
         body: {
           signerName: signerName.trim(),
           signerTitle: signerTitle.trim(),
-          signatureDataUrl: signatureRef.current.toDataURL('image/png'),
+          signatureDataUrl,
           consentAccepted: true
         }
       })
@@ -237,7 +361,7 @@ export default function EmployerOnboarding() {
   const steps = [
     { num: 1, label: 'Organization Profile' },
     { num: 2, label: 'Sign Agreement' },
-    { num: 3, label: 'Pending Approval' },
+    { num: 3, label: 'Pending Approval' }
   ]
 
   return (
@@ -364,11 +488,12 @@ export default function EmployerOnboarding() {
 
             <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '32px' }}>
               <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '24px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '18px' }}>
-                Sign Both Agreements
+                Review and Sign Both Agreements
               </h2>
               <div style={{ display: 'grid', gap: '16px', marginBottom: '24px' }}>
                 {AGREEMENT_CARDS.map((agreement) => {
                   const signedRecord = contractRecords.find((record) => record.document_type === agreement.documentType)
+                  const reviewed = reviewedAgreements[agreement.documentType]
                   return (
                     <div key={agreement.documentType} style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
@@ -377,15 +502,31 @@ export default function EmployerOnboarding() {
                           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                             {signedRecord?.status === 'signed'
                               ? `Signed ${new Date(signedRecord.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                              : 'Ready for electronic signature'}
+                              : reviewed
+                                ? 'Reviewed and ready for electronic signature'
+                                : 'Open the agreement and scroll to the end to unlock signing'}
                           </p>
                         </div>
-                        {signedRecord?.id && (
-                          <button type="button" onClick={() => downloadContract(signedRecord.id)}
-                            style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
-                            Download
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {reviewed && !signedRecord?.id && (
+                            <span style={{ padding: '5px 10px', background: 'rgba(45,122,79,0.12)', color: 'var(--success)', borderRadius: '999px', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '600' }}>
+                              Reviewed
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openAgreement(agreement)}
+                            style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}
+                          >
+                            {signedRecord?.id ? 'View Signed Copy' : 'Review Agreement'}
                           </button>
-                        )}
+                          {signedRecord?.id && (
+                            <button type="button" onClick={() => downloadContract(signedRecord.id)}
+                              style={{ padding: '8px 14px', border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                              Download
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
@@ -405,22 +546,25 @@ export default function EmployerOnboarding() {
 
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Electronic Signature *</label>
-                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden', background: 'white' }}>
-                  <SignatureCanvas
-                    ref={signatureRef}
-                    penColor="#24384C"
-                    canvasProps={{
-                      width: 620,
-                      height: 180,
-                      style: { width: '100%', height: '180px', display: 'block' }
-                    }}
-                  />
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                  <button type="button" onClick={() => signatureRef.current?.clear()}
-                    style={{ padding: '8px 14px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
-                    Clear Signature
-                  </button>
+                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', background: 'white', padding: '18px 20px', minHeight: '132px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                      Your signature will be generated automatically from the signer name above.
+                    </p>
+                    <div style={{ minHeight: '62px', display: 'flex', alignItems: 'center' }}>
+                      <span style={{
+                        fontFamily: '"Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive',
+                        fontSize: signerName.trim() ? '54px' : '28px',
+                        color: signerName.trim() ? 'var(--deep-navy)' : 'var(--text-muted)',
+                        lineHeight: 1.1
+                      }}>
+                        {signerName.trim() || 'Signature preview'}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    This signature is applied to both agreements and included in the signed PDF copies.
+                  </div>
                 </div>
               </div>
 
@@ -431,10 +575,12 @@ export default function EmployerOnboarding() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  Signed copies of both agreements will be emailed to {user?.email}.
+                  {allAgreementsReviewed
+                    ? `Signed copies of both agreements will be emailed to ${user?.email}.`
+                    : 'Review both agreements to the end before signing is unlocked.'}
                 </p>
-                <button type="button" onClick={signContracts} disabled={signing}
-                  style={{ padding: '12px 28px', background: signing ? 'var(--text-muted)' : 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: signing ? 'not-allowed' : 'pointer' }}>
+                <button type="button" onClick={signContracts} disabled={signing || !allAgreementsReviewed}
+                  style={{ padding: '12px 28px', background: signing || !allAgreementsReviewed ? 'var(--text-muted)' : 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: signing || !allAgreementsReviewed ? 'not-allowed' : 'pointer' }}>
                   {signing ? 'Signing...' : 'Sign Both Agreements →'}
                 </button>
               </div>
@@ -485,6 +631,90 @@ export default function EmployerOnboarding() {
           </div>
         )}
       </div>
+
+      {activeAgreement && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(18,31,44,0.72)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ width: 'min(960px, 100%)', maxHeight: '90vh', background: 'white', borderRadius: '6px', overflow: 'hidden', boxShadow: '0 24px 60px rgba(18,31,44,0.22)' }}>
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+              <div>
+                <p style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '4px' }}>
+                  Agreement Review
+                </p>
+                <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '28px', fontWeight: '500', color: 'var(--deep-navy)' }}>
+                  {activeAgreement.title}
+                </h3>
+              </div>
+              <button type="button" onClick={closeAgreementModal}
+                style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', borderRadius: '2px', padding: '8px 12px', cursor: 'pointer', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                Close
+              </button>
+            </div>
+
+            <div
+              ref={agreementScrollRef}
+              onScroll={onAgreementScroll}
+              style={{ maxHeight: 'calc(90vh - 168px)', overflowY: 'auto', padding: '20px', background: '#F8F7F3' }}
+            >
+              {agreementLoading && (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Loading agreement...
+                </div>
+              )}
+
+              {agreementError && (
+                <div style={{ background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '2px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#B43C3C' }}>
+                  {agreementError}
+                </div>
+              )}
+
+              {!agreementLoading && agreementFiles[activeAgreement.documentType] && (
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <Document
+                    file={{ data: agreementFiles[activeAgreement.documentType] }}
+                    onLoadSuccess={({ numPages }) => {
+                      setAgreementPageCounts((previous) => ({
+                        ...previous,
+                        [activeAgreement.documentType]: numPages
+                      }))
+                    }}
+                    loading={<p style={{ color: 'var(--text-muted)' }}>Loading pages...</p>}
+                  >
+                    {Array.from(
+                      { length: agreementPageCounts[activeAgreement.documentType] || 0 },
+                      (_, index) => (
+                        <div key={`${activeAgreement.documentType}-${index + 1}`} style={{ marginBottom: '16px', boxShadow: '0 8px 20px rgba(18,31,44,0.08)' }}>
+                          <Page
+                            pageNumber={index + 1}
+                            width={Math.min(820, typeof window !== 'undefined' ? window.innerWidth - 120 : 820)}
+                            renderAnnotationLayer={false}
+                            renderTextLayer={false}
+                          />
+                        </div>
+                      )
+                    )}
+                  </Document>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <p style={{ fontSize: '12px', color: reviewReady ? 'var(--success)' : 'var(--text-muted)' }}>
+                {reviewReady
+                  ? 'You reached the end of this agreement.'
+                  : 'Scroll to the end of the document to unlock review completion.'}
+              </p>
+              <button
+                type="button"
+                disabled={!reviewReady}
+                onClick={markAgreementReviewed}
+                style={{ padding: '10px 18px', background: reviewReady ? 'var(--deep-navy)' : 'var(--text-muted)', color: 'white', border: 'none', borderRadius: '2px', cursor: reviewReady ? 'pointer' : 'not-allowed', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500' }}
+              >
+                Mark as Reviewed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -296,6 +296,7 @@ async function sendSignedContractEmail({ employerEmail, ccEmail, employerName, c
 
 module.exports = {
   CONTRACT_DEFINITIONS,
+  getContractSourcePath,
   getContractDownloadUrl,
   signEmployerContracts,
   sendSignedContractEmail
