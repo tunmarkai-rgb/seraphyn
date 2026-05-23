@@ -12,7 +12,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 
-const apiBase = import.meta.env.VITE_API_URL || ''
+const directHireAgreementUrl = new URL(
+  '../../../../Seraphyn Care Direct Hire Agreement  (1).pdf',
+  import.meta.url
+).href
+
+const staffingBossAgreementUrl = new URL(
+  '../../../../Seraphyn_Care_Solutions_Staffing_Agreement_BOSS.pdf',
+  import.meta.url
+).href
 
 const ORG_TYPES = [
   'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
@@ -40,8 +48,8 @@ const ONBOARDING_SECTIONS = [
 ]
 
 const AGREEMENT_CARDS = [
-  { documentType: 'direct_hire', title: 'Direct Hire Agreement' },
-  { documentType: 'staffing_boss', title: 'Per Diem Staffing Agreement' }
+  { documentType: 'direct_hire', title: 'Direct Hire Agreement', fileUrl: directHireAgreementUrl },
+  { documentType: 'staffing_boss', title: 'Per Diem Staffing Agreement', fileUrl: staffingBossAgreementUrl }
 ]
 
 function createSignatureDataUrl(name) {
@@ -82,10 +90,7 @@ export default function EmployerOnboarding() {
   const [signerName, setSignerName] = useState('')
   const [signerTitle, setSignerTitle] = useState('')
   const [activeAgreement, setActiveAgreement] = useState(null)
-  const [agreementFiles, setAgreementFiles] = useState({})
   const [agreementPageCounts, setAgreementPageCounts] = useState({})
-  const [agreementLoading, setAgreementLoading] = useState(false)
-  const [agreementError, setAgreementError] = useState('')
   const [reviewReady, setReviewReady] = useState(false)
   const [reviewedAgreements, setReviewedAgreements] = useState({})
 
@@ -220,58 +225,13 @@ export default function EmployerOnboarding() {
     }
   }
 
-  async function fetchAgreementBytes(documentType) {
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.access_token
-    if (!token) throw new Error('You must be signed in to review agreements')
-
-    const response = await fetch(`${apiBase}/api/contracts/templates/${documentType}`, {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-
-    if (!response.ok) {
-      let message = 'Failed to load agreement'
-      try {
-        const data = await response.json()
-        message = data.error || message
-      } catch {
-        // no-op
-      }
-      throw new Error(message)
-    }
-
-    const buffer = await response.arrayBuffer()
-    return new Uint8Array(buffer)
-  }
-
   async function openAgreement(agreement) {
-    setAgreementError('')
     setReviewReady(false)
     setActiveAgreement(agreement)
-
-    if (agreementFiles[agreement.documentType]) {
-      return
-    }
-
-    setAgreementLoading(true)
-    try {
-      const bytes = await fetchAgreementBytes(agreement.documentType)
-      setAgreementFiles((previous) => ({
-        ...previous,
-        [agreement.documentType]: bytes
-      }))
-    } catch (loadError) {
-      setAgreementError(loadError.message)
-    } finally {
-      setAgreementLoading(false)
-    }
   }
 
   function closeAgreementModal() {
     setActiveAgreement(null)
-    setAgreementError('')
     setReviewReady(false)
   }
 
@@ -655,46 +615,32 @@ export default function EmployerOnboarding() {
               onScroll={onAgreementScroll}
               style={{ maxHeight: 'calc(90vh - 168px)', overflowY: 'auto', padding: '20px', background: '#F8F7F3' }}
             >
-              {agreementLoading && (
-                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Loading agreement...
-                </div>
-              )}
-
-              {agreementError && (
-                <div style={{ background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '2px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#B43C3C' }}>
-                  {agreementError}
-                </div>
-              )}
-
-              {!agreementLoading && agreementFiles[activeAgreement.documentType] && (
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <Document
-                    file={{ data: agreementFiles[activeAgreement.documentType] }}
-                    onLoadSuccess={({ numPages }) => {
-                      setAgreementPageCounts((previous) => ({
-                        ...previous,
-                        [activeAgreement.documentType]: numPages
-                      }))
-                    }}
-                    loading={<p style={{ color: 'var(--text-muted)' }}>Loading pages...</p>}
-                  >
-                    {Array.from(
-                      { length: agreementPageCounts[activeAgreement.documentType] || 0 },
-                      (_, index) => (
-                        <div key={`${activeAgreement.documentType}-${index + 1}`} style={{ marginBottom: '16px', boxShadow: '0 8px 20px rgba(18,31,44,0.08)' }}>
-                          <Page
-                            pageNumber={index + 1}
-                            width={Math.min(820, typeof window !== 'undefined' ? window.innerWidth - 120 : 820)}
-                            renderAnnotationLayer={false}
-                            renderTextLayer={false}
-                          />
-                        </div>
-                      )
-                    )}
-                  </Document>
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <Document
+                  file={activeAgreement.fileUrl}
+                  onLoadSuccess={({ numPages }) => {
+                    setAgreementPageCounts((previous) => ({
+                      ...previous,
+                      [activeAgreement.documentType]: numPages
+                    }))
+                  }}
+                  loading={<p style={{ color: 'var(--text-muted)' }}>Loading pages...</p>}
+                >
+                  {Array.from(
+                    { length: agreementPageCounts[activeAgreement.documentType] || 0 },
+                    (_, index) => (
+                      <div key={`${activeAgreement.documentType}-${index + 1}`} style={{ marginBottom: '16px', boxShadow: '0 8px 20px rgba(18,31,44,0.08)' }}>
+                        <Page
+                          pageNumber={index + 1}
+                          width={Math.min(820, typeof window !== 'undefined' ? window.innerWidth - 120 : 820)}
+                          renderAnnotationLayer={false}
+                          renderTextLayer={false}
+                        />
+                      </div>
+                    )
+                  )}
+                </Document>
+              </div>
             </div>
 
             <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
