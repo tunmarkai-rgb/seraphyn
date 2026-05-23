@@ -98,7 +98,7 @@ export default function EmployerOnboarding() {
         ? 3
         : STAGE_MAP[source.onboarding_stage] || 1
 
-    setStage(nextStage)
+    setStage((previousStage) => Math.max(previousStage, nextStage))
     setForm({
       org_name: source.org_name || '',
       org_type: source.org_type || '',
@@ -147,6 +147,9 @@ export default function EmployerOnboarding() {
       })
 
       setEmpProfile(result.employer)
+      setContractRecords(result.employer?.contracts || [])
+      setSignerName(result.employer?.contact_name || form.contact_name || '')
+      setSignerTitle(result.employer?.contact_title || form.contact_title || '')
       setStage(2)
 
       void syncContact()
@@ -165,7 +168,6 @@ export default function EmployerOnboarding() {
         console.error('Employer signup event forwarding failed:', forwardError.message)
       })
 
-      void loadProfile()
     } catch (err) {
       setError(err.message)
     } finally {
