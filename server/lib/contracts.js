@@ -17,6 +17,31 @@ const CONTRACT_DEFINITIONS = [
   }
 ]
 
+let extendedContractsSchemaSupport = null
+
+async function supportsExtendedContractsSchema() {
+  if (extendedContractsSchemaSupport !== null) {
+    return extendedContractsSchemaSupport
+  }
+
+  const { error } = await supabase
+    .from('contracts')
+    .select('document_type')
+    .limit(1)
+
+  if (error && /document_type.*does not exist/i.test(error.message)) {
+    extendedContractsSchemaSupport = false
+    return false
+  }
+
+  extendedContractsSchemaSupport = true
+  return true
+}
+
+function getPortalTemplateUrl(documentType) {
+  return `portal-template:${documentType}`
+}
+
 function getContractSourcePath(fileName) {
   return path.resolve(__dirname, '..', '..', fileName)
 }
@@ -145,30 +170,35 @@ async function upsertContractRecord({
   signerEmail,
   audit
 }) {
+  const useExtendedSchema = await supportsExtendedContractsSchema()
+  const templateUrl = getPortalTemplateUrl(documentType)
   const { data: existing } = await supabase
     .from('contracts')
     .select('id')
     .eq('employer_id', employerId)
-    .eq('document_type', documentType)
+    .eq('template_url', templateUrl)
     .maybeSingle()
 
   const payload = {
     employer_id: employerId,
-    document_type: documentType,
-    title,
-    template_url: `portal-template:${documentType}`,
-    source_file_name: sourceFileName,
-    signed_storage_path: signedStoragePath,
+    template_url: templateUrl,
     signed_url: signedStoragePath,
     status: 'signed',
     signed_at: signedAt,
     sent_at: signedAt,
-    signature_provider: 'portal-native',
-    signed_by_name: signerName,
-    signed_by_email: signerEmail,
-    signed_by_title: signerTitle || null,
-    signature_audit: audit,
     updated_at: signedAt
+  }
+
+  if (useExtendedSchema) {
+    payload.document_type = documentType
+    payload.title = title
+    payload.source_file_name = sourceFileName
+    payload.signed_storage_path = signedStoragePath
+    payload.signature_provider = 'portal-native'
+    payload.signed_by_name = signerName
+    payload.signed_by_email = signerEmail
+    payload.signed_by_title = signerTitle || null
+    payload.signature_audit = audit
   }
 
   if (existing?.id) {

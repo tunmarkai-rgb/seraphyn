@@ -33,7 +33,7 @@ export default function EmployerDashboard() {
     try {
       const { data: ep } = await supabase
         .from('employer_profiles')
-        .select('*, contracts(id, title, document_type, status, signed_at)')
+        .select('*, contracts(*)')
         .eq('user_id', user.id)
         .single()
       setEmpProfile(ep)

@@ -52,6 +52,11 @@ const AGREEMENT_CARDS = [
   { documentType: 'staffing_boss', title: 'Per Diem Staffing Agreement', fileUrl: staffingBossAgreementUrl }
 ]
 
+function matchesAgreementRecord(record, documentType) {
+  if (!record) return false
+  return record.document_type === documentType || record.template_url === `portal-template:${documentType}`
+}
+
 function createSignatureDataUrl(name) {
   if (typeof document === 'undefined') return ''
 
@@ -116,7 +121,7 @@ export default function EmployerOnboarding() {
   async function loadProfile() {
     const { data } = await supabase
       .from('employer_profiles')
-      .select('*, contracts(id, document_type, title, status, sent_at, signed_at, signed_url, signed_storage_path, signed_by_name, signed_by_email, signed_by_title)')
+      .select('*, contracts(*)')
       .eq('user_id', user.id)
       .single()
 
@@ -452,7 +457,7 @@ export default function EmployerOnboarding() {
               </h2>
               <div style={{ display: 'grid', gap: '16px', marginBottom: '24px' }}>
                 {AGREEMENT_CARDS.map((agreement) => {
-                  const signedRecord = contractRecords.find((record) => record.document_type === agreement.documentType)
+                  const signedRecord = contractRecords.find((record) => matchesAgreementRecord(record, agreement.documentType))
                   const reviewed = reviewedAgreements[agreement.documentType]
                   return (
                     <div key={agreement.documentType} style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '16px' }}>

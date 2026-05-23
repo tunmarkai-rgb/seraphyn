@@ -29,19 +29,7 @@ export default function AdminEmployers() {
       .select(`
         *,
         users!inner(id, email, status, full_name, created_at),
-        contracts(
-          id,
-          document_type,
-          title,
-          status,
-          signed_at,
-          sent_at,
-          signed_storage_path,
-          signed_url,
-          signed_by_name,
-          signed_by_email,
-          signed_by_title
-        )
+        contracts(*)
       `)
       .order('created_at', { ascending: false })
 
