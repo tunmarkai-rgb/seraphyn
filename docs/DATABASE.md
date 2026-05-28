@@ -208,8 +208,10 @@
 
 - Employer onboarding Stage 1 now writes through `POST /api/employers/onboarding/profile` so server logic can backfill `public.users` / `employer_profiles` safely.
 - Employer agreement signing is now portal-native first. GHL document send remains a legacy fallback path.
+- Employer agreement completion now raises both in-app admin notifications and an internal operational email to `info@seraphyncare.com`.
 - Nurses can upload resume and license directly into `nurse_profiles` and certification proof files into `nurse_documents`.
 - Admin and approved employers access private nurse certification documents through signed server URLs, not public bucket links.
+- New nurse and employer signups also create internal operational alerts for approval review.
 - Production nurse profile writes normalize the currently accepted enum-backed values to:
   - `shift_preference = any`
   - `availability = available`

@@ -3,6 +3,7 @@ const router = express.Router()
 const { supabase } = require('../config/supabase')
 const crypto = require('crypto')
 const { dispatchPortalEvent } = require('../lib/portal-events')
+const { notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
 
 const GHL_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAi2HR1srL4o18O8BRa7gVJY7G7bupbN3H9AwJrHCDiOg=
@@ -208,6 +209,24 @@ router.post('/ghl', async (req, res) => {
       referenceId
     }, {
       sync: { type: 'employer', id: employer.id }
+    })
+
+    await notifyAdmins({
+      type: 'employer.contract_signed',
+      title: 'Employer agreements completed',
+      body: `${employer.org_name || employer.users?.email || 'Employer'} completed required agreements and is ready for final approval.`,
+      entityType: 'employer_profile',
+      entityId: employer.id,
+      metadata: {
+        signedAt: now,
+        source: 'ghl-webhook'
+      }
+    })
+
+    await notifyInternalInbox({
+      subject: 'Seraphyn: employer agreements signed',
+      title: 'Employer agreements completed',
+      body: `${employer.org_name || employer.users?.email || 'Employer'} completed required agreements and signed copies are available.`
     })
 
     res.json({ received: true, eventType, employerId: employer.id })

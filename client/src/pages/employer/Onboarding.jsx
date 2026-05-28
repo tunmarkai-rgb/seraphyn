@@ -1,26 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Document, Page, pdfjs } from 'react-pdf'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 import { US_STATES } from '../../lib/constants'
 import { apiRequest } from '../../lib/api'
-
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
-
-const directHireAgreementUrl = new URL(
-  '../../../../Seraphyn Care Direct Hire Agreement  (1).pdf',
-  import.meta.url
-).href
-
-const staffingBossAgreementUrl = new URL(
-  '../../../../Seraphyn_Care_Solutions_Staffing_Agreement_BOSS.pdf',
-  import.meta.url
-).href
+import { AGREEMENT_ORDER, AGREEMENT_TEMPLATES } from '../../lib/agreementTemplates'
 
 const ORG_TYPES = [
   'Hospital', 'Urgent Care', 'Outpatient Clinic', 'Long-Term Care Facility',
@@ -47,10 +32,10 @@ const ONBOARDING_SECTIONS = [
   }
 ]
 
-const AGREEMENT_CARDS = [
-  { documentType: 'direct_hire', title: 'Direct Hire Agreement', fileUrl: directHireAgreementUrl },
-  { documentType: 'staffing_boss', title: 'Per Diem Staffing Agreement', fileUrl: staffingBossAgreementUrl }
-]
+const AGREEMENT_CARDS = AGREEMENT_ORDER.map((documentType) => ({
+  documentType,
+  title: AGREEMENT_TEMPLATES[documentType].title
+}))
 
 function matchesAgreementRecord(record, documentType) {
   if (!record) return false
@@ -95,9 +80,34 @@ export default function EmployerOnboarding() {
   const [signerName, setSignerName] = useState('')
   const [signerTitle, setSignerTitle] = useState('')
   const [activeAgreement, setActiveAgreement] = useState(null)
-  const [agreementPageCounts, setAgreementPageCounts] = useState({})
   const [reviewReady, setReviewReady] = useState(false)
   const [reviewedAgreements, setReviewedAgreements] = useState({})
+  const [agreementFields, setAgreementFields] = useState(() => ({
+    direct_hire: {
+      organizationName: '',
+      organizationType: '',
+      contactName: '',
+      contactTitle: '',
+      contactEmail: '',
+      signerName: '',
+      signerTitle: '',
+      signerInitials: '',
+      effectiveDate: '',
+      acknowledgements: []
+    },
+    staffing_boss: {
+      organizationName: '',
+      organizationType: '',
+      contactName: '',
+      contactTitle: '',
+      contactEmail: '',
+      signerName: '',
+      signerTitle: '',
+      signerInitials: '',
+      effectiveDate: '',
+      acknowledgements: []
+    }
+  }))
 
   const allAgreementsReviewed = useMemo(
     () => AGREEMENT_CARDS.every((agreement) => reviewedAgreements[agreement.documentType]),
@@ -117,6 +127,20 @@ export default function EmployerOnboarding() {
 
     return () => clearInterval(interval)
   }, [user, stage])
+
+  useEffect(() => {
+    setAgreementFields((previous) => {
+      const next = { ...previous }
+      for (const agreement of AGREEMENT_CARDS) {
+        next[agreement.documentType] = {
+          ...previous[agreement.documentType],
+          signerName,
+          signerTitle
+        }
+      }
+      return next
+    })
+  }, [signerName, signerTitle])
 
   async function loadProfile() {
     const { data } = await supabase
@@ -167,6 +191,27 @@ export default function EmployerOnboarding() {
     })
     setSignerName(source.contact_name || metadata.contact_name || metadata.full_name || '')
     setSignerTitle(source.contact_title || '')
+    setAgreementFields((previous) => {
+      const contactEmail = user?.email || ''
+      const effectiveDate = new Date().toISOString().slice(0, 10)
+      const next = { ...previous }
+      for (const agreement of AGREEMENT_CARDS) {
+        const current = previous[agreement.documentType] || {}
+        next[agreement.documentType] = {
+          organizationName: current.organizationName || source.org_name || '',
+          organizationType: current.organizationType || source.org_type || '',
+          contactName: current.contactName || source.contact_name || '',
+          contactTitle: current.contactTitle || source.contact_title || '',
+          contactEmail: current.contactEmail || contactEmail,
+          signerName: current.signerName || source.contact_name || metadata.contact_name || metadata.full_name || '',
+          signerTitle: current.signerTitle || source.contact_title || '',
+          signerInitials: current.signerInitials || '',
+          effectiveDate: current.effectiveDate || effectiveDate,
+          acknowledgements: current.acknowledgements || []
+        }
+      }
+      return next
+    })
 
     if (data && !data.ghl_contact_id && !syncingContact) {
       void syncContact()
@@ -251,6 +296,25 @@ export default function EmployerOnboarding() {
   function markAgreementReviewed() {
     if (!activeAgreement || !reviewReady) return
 
+    const fields = agreementFields[activeAgreement.documentType]
+    const requiredFieldValues = [
+      fields?.organizationName,
+      fields?.organizationType,
+      fields?.contactName,
+      fields?.contactEmail,
+      fields?.signerName,
+      fields?.signerInitials,
+      fields?.effectiveDate
+    ]
+
+    const template = AGREEMENT_TEMPLATES[activeAgreement.documentType]
+    const allAcknowledged = (template?.acknowledgements || []).every((_, index) => fields?.acknowledgements?.includes(index))
+
+    if (requiredFieldValues.some((value) => !String(value || '').trim()) || !allAcknowledged) {
+      setError(`Complete all required fields and acknowledgements for ${template?.title || 'this agreement'} before marking it reviewed.`)
+      return
+    }
+
     setReviewedAgreements((previous) => ({
       ...previous,
       [activeAgreement.documentType]: true
@@ -284,6 +348,25 @@ export default function EmployerOnboarding() {
       return
     }
 
+    for (const agreement of AGREEMENT_CARDS) {
+      const fields = agreementFields[agreement.documentType] || {}
+      const requiredFieldValues = [
+        fields.organizationName,
+        fields.organizationType,
+        fields.contactName,
+        fields.contactEmail,
+        fields.signerName,
+        fields.signerInitials,
+        fields.effectiveDate
+      ]
+      const template = AGREEMENT_TEMPLATES[agreement.documentType]
+      const allAcknowledged = (template?.acknowledgements || []).every((_, index) => fields?.acknowledgements?.includes(index))
+      if (requiredFieldValues.some((value) => !String(value || '').trim()) || !allAcknowledged) {
+        setError(`Complete all required fields in ${template?.title || 'each agreement'} before signing.`)
+        return
+      }
+    }
+
     const signatureDataUrl = createSignatureDataUrl(signerName.trim())
     if (!signatureDataUrl) {
       setError('Failed to generate electronic signature preview.')
@@ -298,7 +381,8 @@ export default function EmployerOnboarding() {
           signerName: signerName.trim(),
           signerTitle: signerTitle.trim(),
           signatureDataUrl,
-          consentAccepted: true
+          consentAccepted: true,
+          agreementFields
         }
       })
 
@@ -328,6 +412,34 @@ export default function EmployerOnboarding() {
     { num: 2, label: 'Sign Agreement' },
     { num: 3, label: 'Pending Approval' }
   ]
+
+  function updateAgreementField(documentType, field, value) {
+    setAgreementFields((previous) => ({
+      ...previous,
+      [documentType]: {
+        ...previous[documentType],
+        [field]: value
+      }
+    }))
+  }
+
+  function toggleAgreementAcknowledgement(documentType, index) {
+    setAgreementFields((previous) => {
+      const current = previous[documentType] || {}
+      const currentAcks = current.acknowledgements || []
+      const nextAcks = currentAcks.includes(index)
+        ? currentAcks.filter((value) => value !== index)
+        : [...currentAcks, index]
+
+      return {
+        ...previous,
+        [documentType]: {
+          ...current,
+          acknowledgements: nextAcks
+        }
+      }
+    })
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--warm-white)', fontFamily: 'DM Sans, sans-serif' }}>
@@ -469,7 +581,7 @@ export default function EmployerOnboarding() {
                               ? `Signed ${new Date(signedRecord.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
                               : reviewed
                                 ? 'Reviewed and ready for electronic signature'
-                                : 'Open the agreement and scroll to the end to unlock signing'}
+                                : 'Open the agreement, complete all required fields, and scroll to the end to unlock signing'}
                           </p>
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -480,10 +592,10 @@ export default function EmployerOnboarding() {
                           )}
                           <button
                             type="button"
-                            onClick={() => openAgreement(agreement)}
+                            onClick={() => (signedRecord?.id ? downloadContract(signedRecord.id) : openAgreement(agreement))}
                             style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}
                           >
-                            {signedRecord?.id ? 'View Signed Copy' : 'Review Agreement'}
+                            {signedRecord?.id ? 'View Signed Copy' : 'Open Agreement'}
                           </button>
                           {signedRecord?.id && (
                             <button type="button" onClick={() => downloadContract(signedRecord.id)}
@@ -541,8 +653,8 @@ export default function EmployerOnboarding() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   {allAgreementsReviewed
-                    ? `Signed copies of both agreements will be emailed to ${user?.email}.`
-                    : 'Review both agreements to the end before signing is unlocked.'}
+                    ? `Signed copies of both agreements will be emailed to ${user?.email} and copied to info@seraphyncare.com.`
+                    : 'Complete both agreement forms and review them to the end before signing is unlocked.'}
                 </p>
                 <button type="button" onClick={signContracts} disabled={signing || !allAgreementsReviewed}
                   style={{ padding: '12px 28px', background: signing || !allAgreementsReviewed ? 'var(--text-muted)' : 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: signing || !allAgreementsReviewed ? 'not-allowed' : 'pointer' }}>
@@ -632,32 +744,106 @@ export default function EmployerOnboarding() {
               onScroll={onAgreementScroll}
               style={{ maxHeight: 'calc(90vh - 168px)', overflowY: 'auto', padding: '20px', background: '#F8F7F3' }}
             >
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <Document
-                  file={activeAgreement.fileUrl}
-                  onLoadSuccess={({ numPages }) => {
-                    setAgreementPageCounts((previous) => ({
-                      ...previous,
-                      [activeAgreement.documentType]: numPages
-                    }))
-                  }}
-                  loading={<p style={{ color: 'var(--text-muted)' }}>Loading pages...</p>}
-                >
-                  {Array.from(
-                    { length: agreementPageCounts[activeAgreement.documentType] || 0 },
-                    (_, index) => (
-                      <div key={`${activeAgreement.documentType}-${index + 1}`} style={{ marginBottom: '16px', boxShadow: '0 8px 20px rgba(18,31,44,0.08)' }}>
-                        <Page
-                          pageNumber={index + 1}
-                          width={Math.min(820, typeof window !== 'undefined' ? window.innerWidth - 120 : 820)}
-                          renderAnnotationLayer={false}
-                          renderTextLayer={false}
-                        />
+              {(() => {
+                const template = AGREEMENT_TEMPLATES[activeAgreement.documentType]
+                const fields = agreementFields[activeAgreement.documentType] || {}
+                return (
+                  <div style={{ maxWidth: '820px', margin: '0 auto', background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '28px' }}>
+                    <p style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '8px' }}>
+                      Employer Agreement
+                    </p>
+                    <h4 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '34px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '6px' }}>
+                      {template.title}
+                    </h4>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '18px' }}>{template.subtitle}</p>
+                    <p style={{ fontSize: '14px', color: 'var(--deep-navy)', lineHeight: '1.8', marginBottom: '26px' }}>{template.intro}</p>
+
+                    <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                      <div>
+                        <label style={labelStyle}>Organization Name *</label>
+                        <input value={fields.organizationName || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'organizationName', e.target.value)} style={inputStyle} />
                       </div>
-                    )
-                  )}
-                </Document>
-              </div>
+                      <div>
+                        <label style={labelStyle}>Organization Type *</label>
+                        <input value={fields.organizationType || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'organizationType', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Contact Name *</label>
+                        <input value={fields.contactName || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'contactName', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Contact Title</label>
+                        <input value={fields.contactTitle || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'contactTitle', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Contact Email *</label>
+                        <input value={fields.contactEmail || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'contactEmail', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Effective Date *</label>
+                        <input type="date" value={fields.effectiveDate || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'effectiveDate', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Signer Name *</label>
+                        <input value={fields.signerName || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'signerName', e.target.value)} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Signer Title</label>
+                        <input value={fields.signerTitle || ''} onChange={(e) => updateAgreementField(activeAgreement.documentType, 'signerTitle', e.target.value)} style={inputStyle} />
+                      </div>
+                    </div>
+
+                    {template.sections.map((section) => (
+                      <div key={section.heading} style={{ marginBottom: '22px' }}>
+                        <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', marginBottom: '8px' }}>
+                          {section.heading}
+                        </p>
+                        {section.paragraphs.map((paragraph) => (
+                          <p key={paragraph} style={{ fontSize: '14px', color: 'var(--deep-navy)', lineHeight: '1.8', marginBottom: '12px' }}>
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '24px' }}>
+                      <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', marginBottom: '10px' }}>
+                        Required Acknowledgements
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                        {template.acknowledgements.map((item, index) => (
+                          <label key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>
+                            <input
+                              type="checkbox"
+                              checked={(fields.acknowledgements || []).includes(index)}
+                              onChange={() => toggleAgreementAcknowledgement(activeAgreement.documentType, index)}
+                            />
+                            {item}
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <div>
+                          <label style={labelStyle}>Signer Initials *</label>
+                          <input
+                            value={fields.signerInitials || ''}
+                            onChange={(e) => updateAgreementField(activeAgreement.documentType, 'signerInitials', e.target.value.toUpperCase().slice(0, 4))}
+                            style={inputStyle}
+                            placeholder="KR"
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Signature Preview</label>
+                          <div style={{ ...inputStyle, minHeight: '52px', display: 'flex', alignItems: 'center', fontFamily: '"Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive', fontSize: '34px' }}>
+                            {fields.signerName || signerName || 'Signer name'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>

@@ -45,6 +45,7 @@ Two-sided healthcare staffing marketplace.
 8. Build must pass before closeout: `npm run build` in `client/`.
 9. Supabase Auth currently owns signup confirmation and password reset delivery; those auth emails are branded and sent through Resend SMTP, not GHL.
 10. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
+11. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
 
 ---
 
@@ -117,6 +118,7 @@ Notes:
 - The frontend uses `VITE_APP_URL` when building auth email redirect targets so confirmation and reset links do not fall back to localhost.
 - The nurse lead bridge in production currently expects `x-seraphyn-secret: seraphyn2026!` for the GHL nurse lead webhook action.
 - Employer contract emails now go through Resend with attachments and `cc` support when agreements are signed in the portal; current CC target is `info@seraphyncare.com`.
+- Internal operational email alerts default to `info@seraphyncare.com` via `INTERNAL_ALERT_EMAIL` or the hardcoded fallback.
 
 ---
 
@@ -190,7 +192,8 @@ All billing is offline for M2.
 - Step 2 of employer onboarding shows onboarding guidance plus both required agreements:
   - Direct Hire Agreement
   - Per Diem Staffing Agreement
-- `POST /api/employers/contracts/sign` signs both agreements in one session, appends an audit page to each PDF, stores them in private Supabase storage, emails both signed copies to the employer, and CCs `info@seraphyncare.com`.
+- `POST /api/employers/contracts/sign` signs both agreements in one session, stores signed PDFs in private Supabase storage, emails both signed copies to the employer, CCs `info@seraphyncare.com`, and raises internal approval notifications.
+- The employer agreement UX is now portal-native and field-driven rather than PDF-page review only; required agreement fields must be completed before both agreements can be marked reviewed and signed.
 - Signed documents update:
   - `contracts.status`
   - `contracts.document_type`
@@ -245,6 +248,7 @@ Current production n8n state:
   - `availability` is stored as `available`
   - legacy signup values such as `Permanent`, `Per Diem`, `Contract Travel`, `Day`, `Night`, `Evening`, and `Mixed` are normalized during bootstrap
 - Nurse profile page now exposes a direct `Go to Dashboard` CTA so mobile users are not trapped at the bottom of the form
+- Client-facing pre-call handover is tracked in [docs/CLIENT_HANDOVER_2026-05-27.md](docs/CLIENT_HANDOVER_2026-05-27.md)
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
 - Approval and application transitions routed through server hooks where needed

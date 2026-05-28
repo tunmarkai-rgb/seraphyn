@@ -3,7 +3,7 @@ const router = express.Router()
 const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole, requireSessionUser } = require('../middleware/auth')
 const { dispatchPortalEvent } = require('../lib/portal-events')
-const { createNotification } = require('../lib/notifications')
+const { createNotification, notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
 const { ensureEmployerProfileRow, ensurePublicUserForAuthUser } = require('../lib/user-bootstrap')
 const { signEmployerContracts, sendSignedContractEmail } = require('../lib/contracts')
 
@@ -213,7 +213,7 @@ router.post('/contracts/sign', requireSessionUser, async (req, res) => {
       return res.status(404).json({ error: 'Employer profile not found' })
     }
 
-    const { signerName, signerTitle, signatureDataUrl, consentAccepted } = req.body || {}
+    const { signerName, signerTitle, signatureDataUrl, consentAccepted, agreementFields = {} } = req.body || {}
     if (!consentAccepted) {
       return res.status(400).json({ error: 'Electronic signature consent is required' })
     }
@@ -227,6 +227,7 @@ router.post('/contracts/sign', requireSessionUser, async (req, res) => {
       signerTitle,
       signerEmail: publicUser.email || req.authUser.email,
       signatureDataUrl,
+      agreementFields,
       ipAddress: req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '',
       userAgent: req.headers['user-agent'] || ''
     })
@@ -245,6 +246,23 @@ router.post('/contracts/sign', requireSessionUser, async (req, res) => {
       signedAt: signResult.signedAt
     }, {
       sync: { type: 'employer', id: employer.id }
+    })
+
+    await notifyAdmins({
+      type: 'employer.contract_signed',
+      title: 'Employer agreements completed',
+      body: `${employer.org_name || signerName} completed all required agreements and is ready for final approval.`,
+      entityType: 'employer_profile',
+      entityId: employer.id,
+      metadata: {
+        signedAt: signResult.signedAt
+      }
+    })
+
+    await notifyInternalInbox({
+      subject: 'Seraphyn: employer agreements signed',
+      title: 'Employer agreements completed',
+      body: `${employer.org_name || signerName} completed all required agreements and signed copies were issued.`
     })
 
     res.json({

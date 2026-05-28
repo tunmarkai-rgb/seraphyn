@@ -40,15 +40,18 @@ Payments do not run through Stripe, GHL payment links, or portal checkout in M2.
    - onboarding guidance
    - Direct Hire Agreement
    - Per Diem Staffing Agreement
+   - explicit required agreement fields and acknowledgements
    - one shared signature panel
 4. Employer signs once through `POST /api/employers/contracts/sign`.
 5. Server:
+   - generates signed PDFs for both agreements
    - appends an audit/signature page to both source PDFs
    - stores both signed files in private `contracts` storage
    - upserts one `contracts` row per agreement document
    - sets `employer_profiles.contract_signed = true`
    - emails both signed PDFs to the employer
    - CCs `info@seraphyncare.com`
+   - raises admin approval notifications
 6. Employer moves to Step 3 pending approval.
 7. Admin approval remains the final unlock for dashboard access.
 

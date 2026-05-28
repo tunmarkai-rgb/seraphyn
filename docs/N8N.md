@@ -29,6 +29,7 @@ Current production workflow state:
 - `Seraphyn - Portal Events Inbound` is active in production with workflow ID `xh5ruX7lGR9m8vIE`
 - `Seraphyn - Resume Parser` is exported to production with workflow ID `xFl2h0aUGWqK7Zsb`
 - the resume parser remains inactive until a real Anthropic key is loaded into the native n8n credential
+- the current blocker for live parsing validation is LLM credit, not missing workflow design
 
 ---
 
@@ -45,6 +46,13 @@ Actions:
 - Send to Claude through the native n8n AI Agent path
 - Write parsed JSON to `nurse_profiles.ai_parsed_data`
 - Backfill empty nurse profile fields where safe
+
+Plain-language explanation:
+- a nurse uploads a resume
+- the workflow pulls the file and extracts readable text
+- Claude converts the unstructured resume into structured profile data
+- the structured result is saved to `ai_parsed_data`
+- safe empty-field backfill can then enrich the nurse profile without replacing trusted existing values
 
 Primary output:
 - `nurse_profiles.ai_parsed_data`

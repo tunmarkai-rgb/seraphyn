@@ -1,7 +1,7 @@
 const { supabase } = require('../config/supabase')
 const { evaluateNurseProfileCompletion } = require('./nurse-profile')
 const { dispatchPortalEvent } = require('./portal-events')
-const { createNotification, notifyAdmins, getExistingNotification } = require('./notifications')
+const { createNotification, notifyAdmins, notifyInternalInbox, getExistingNotification } = require('./notifications')
 
 async function syncNurseCompletionByUserId(userId) {
   const { data: nurse, error } = await supabase
@@ -50,6 +50,12 @@ async function syncNurseCompletionByUserId(userId) {
       specialty: nurse.specialty || null,
       percent: progress.percent
     }
+  })
+
+  await notifyInternalInbox({
+    subject: 'Seraphyn: nurse profile ready for approval',
+    title: 'Nurse profile reached 100%',
+    body: `${`${nurse.first_name || 'Nurse'} ${nurse.last_name || ''}`.trim()} is now 100% complete and ready for review.`
   })
 
   await dispatchPortalEvent('nurse.profile_completed', {

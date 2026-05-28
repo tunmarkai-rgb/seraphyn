@@ -1,6 +1,10 @@
 const { supabase } = require('../config/supabase')
 const { sendPortalEmail } = require('./mail')
 
+function getInternalInbox() {
+  return process.env.INTERNAL_ALERT_EMAIL || 'info@seraphyncare.com'
+}
+
 function isMissingRelation(error) {
   return error?.code === '42P01' || /does not exist/i.test(error?.message || '')
 }
@@ -162,6 +166,17 @@ async function notifyAdmins({ type, title, body, entityType = null, entityId = n
   })))
 }
 
+async function notifyInternalInbox({ subject, title, body, html = '' }) {
+  const to = getInternalInbox()
+  const text = [title, '', body].filter(Boolean).join('\n')
+  return sendPortalEmail({
+    to,
+    subject: subject || title || 'Seraphyn portal alert',
+    text,
+    html: html || `<p><strong>${title || 'Seraphyn portal alert'}</strong></p><p>${body || ''}</p>`
+  })
+}
+
 async function createMessageNotification({ receiverId, senderName, message, applicationId, recipientEmail }) {
   const type = 'message.new'
   const title = `New message from ${senderName || 'Seraphyn'}`
@@ -213,6 +228,7 @@ module.exports = {
   markNotificationRead,
   markAllNotificationsRead,
   notifyAdmins,
+  notifyInternalInbox,
   createMessageNotification,
   getExistingNotification
 }

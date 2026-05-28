@@ -5,7 +5,7 @@ const { requireAuth, requireRole } = require('../middleware/auth')
 const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sync')
 const { dispatchPortalEvent } = require('../lib/portal-events')
 const { syncNurseCompletionByUserId } = require('../lib/nurse-completion')
-const { notifyAdmins } = require('../lib/notifications')
+const { notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
 
 router.post('/ghl/sync-self', requireAuth, requireRole('nurse', 'employer'), async (req, res) => {
   try {
@@ -93,6 +93,12 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
             specialty: nurse.specialty || null
           }
         })
+
+        await notifyInternalInbox({
+          subject: 'Seraphyn: new nurse portal signup',
+          title: 'New nurse signup awaiting review',
+          body: `${req.user.full_name || req.user.email} created a nurse portal account.`
+        })
       }
 
       return res.json({ message: 'Event forwarded to n8n', event })
@@ -127,6 +133,12 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
         body: `${employer.org_name || req.user.full_name || req.user.email} created a portal account.`,
         entityType: 'employer_profile',
         entityId: employer.id
+      })
+
+      await notifyInternalInbox({
+        subject: 'Seraphyn: new employer portal signup',
+        title: 'New employer signup awaiting review',
+        body: `${employer.org_name || req.user.full_name || req.user.email} created an employer portal account.`
       })
     }
 

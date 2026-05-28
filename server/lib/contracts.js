@@ -3,6 +3,7 @@ const path = require('path')
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const { supabase } = require('../config/supabase')
 const { sendPortalEmail } = require('./mail')
+const { AGREEMENT_TEMPLATES } = require('./agreement-templates')
 
 const CONTRACT_DEFINITIONS = [
   {
@@ -59,6 +60,7 @@ async function appendSignatureAuditPage({
   signerTitle,
   signerEmail,
   signatureDataUrl,
+  agreementFieldValues = {},
   signedAt,
   ipAddress,
   userAgent
@@ -99,6 +101,33 @@ async function appendSignatureAuditPage({
       color: rgb(0.22, 0.29, 0.35)
     })
     y -= 22
+  }
+
+  const fieldEntries = Object.entries(agreementFieldValues || {}).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+  if (fieldEntries.length > 0) {
+    y -= 8
+    page.drawText('Agreement Field Values', {
+      x: 48,
+      y,
+      size: 13,
+      font: boldFont,
+      color: rgb(0.17, 0.24, 0.31)
+    })
+    y -= 22
+
+    for (const [key, value] of fieldEntries) {
+      page.drawText(`${key}: ${String(value)}`, {
+        x: 48,
+        y,
+        size: 10,
+        font,
+        color: rgb(0.22, 0.29, 0.35),
+        maxWidth: 516,
+        lineHeight: 14
+      })
+      y -= 16
+      if (y < 120) break
+    }
   }
 
   y -= 8
@@ -227,6 +256,7 @@ async function signEmployerContracts({
   signerTitle,
   signerEmail,
   signatureDataUrl,
+  agreementFields = {},
   ipAddress,
   userAgent
 }) {
@@ -234,6 +264,8 @@ async function signEmployerContracts({
   const results = []
 
   for (const contract of CONTRACT_DEFINITIONS) {
+    const fieldValues = agreementFields?.[contract.documentType] || {}
+    const template = AGREEMENT_TEMPLATES[contract.documentType]
     const sourceBytes = fs.readFileSync(getContractSourcePath(contract.fileName))
     const signedBytes = await appendSignatureAuditPage({
       pdfBytes: sourceBytes,
@@ -243,6 +275,21 @@ async function signEmployerContracts({
       signerTitle,
       signerEmail,
       signatureDataUrl,
+      agreementFieldValues: {
+        organizationName: fieldValues.organizationName || employer.org_name || '',
+        organizationType: fieldValues.organizationType || employer.org_type || '',
+        contactName: fieldValues.contactName || employer.contact_name || '',
+        contactTitle: fieldValues.contactTitle || employer.contact_title || '',
+        contactEmail: fieldValues.contactEmail || signerEmail || '',
+        signerName: fieldValues.signerName || signerName,
+        signerTitle: fieldValues.signerTitle || signerTitle || '',
+        signerInitials: fieldValues.signerInitials || '',
+        effectiveDate: fieldValues.effectiveDate || signedAt.slice(0, 10),
+        acknowledgements: Array.isArray(fieldValues.acknowledgements)
+          ? fieldValues.acknowledgements.join(', ')
+          : '',
+        agreementTitle: template?.title || contract.title
+      },
       signedAt,
       ipAddress,
       userAgent
@@ -258,7 +305,8 @@ async function signEmployerContracts({
     const audit = {
       signedAt,
       ipAddress: ipAddress || null,
-      userAgent: userAgent || null
+      userAgent: userAgent || null,
+      agreementFields: fieldValues
     }
 
     const record = await upsertContractRecord({
