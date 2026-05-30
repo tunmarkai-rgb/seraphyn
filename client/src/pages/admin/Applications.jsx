@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import AdminLayout from '../../components/AdminLayout'
 
@@ -28,7 +29,7 @@ export default function AdminApplications() {
       .select(`
         *,
         jobs(title, city, state, specialty),
-        nurse_profiles(first_name, last_name, specialty),
+        nurse_profiles(id, first_name, last_name, specialty),
         employer_profiles(org_name)
       `)
       .order('created_at', { ascending: false })
@@ -114,6 +115,14 @@ export default function AdminApplications() {
                 )}
 
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  {app.nurse_profiles?.id && (
+                    <Link
+                      to={`/admin/nurses?open=${app.nurse_profiles.id}`}
+                      style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                    >
+                      View Candidate
+                    </Link>
+                  )}
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Admin Note</label>
                     <input value={notes[app.id] || ''} onChange={e => setNotes({ ...notes, [app.id]: e.target.value })}

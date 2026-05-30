@@ -41,6 +41,17 @@ export default function Messages() {
   }, [searchParams, threads, isMobile])
 
   useEffect(() => {
+    const appId = searchParams.get('app')
+    if (!appId || threads.length === 0 && loading) return
+    if (selectedThread?.application_id === appId) return
+
+    const match = threads.find((thread) => thread.application_id === appId)
+    if (match) return
+
+    void loadThreadContext(appId)
+  }, [searchParams, threads, loading, selectedThread, isMobile])
+
+  useEffect(() => {
     if (selectedThread) {
       void loadMessages(selectedThread)
       void markAsRead(selectedThread)
@@ -74,6 +85,23 @@ export default function Messages() {
     }
   }
 
+  async function loadThreadContext(applicationId) {
+    try {
+      const thread = await apiRequest(`/api/messages/thread/${applicationId}`)
+      if (!thread) return
+      setThreads((previous) => {
+        if (previous.some((item) => item.application_id === thread.application_id)) {
+          return previous
+        }
+        return [thread, ...previous]
+      })
+      setSelectedThread(thread)
+      if (isMobile) setActiveView('conversation')
+    } catch (error) {
+      console.error('Failed to load thread context:', error.message)
+    }
+  }
+
   async function markAsRead(thread) {
     try {
       await apiRequest(`/api/messages/${thread.application_id}/read`, {
@@ -101,6 +129,7 @@ export default function Messages() {
       if (data) {
         setMessages((prev) => [...prev, data])
         setNewMessage('')
+        void loadThreads()
       }
     } catch (error) {
       console.error('Failed to send message:', error.message)

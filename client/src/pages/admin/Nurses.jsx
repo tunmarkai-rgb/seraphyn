@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
 
 export default function AdminNurses() {
+  const [searchParams] = useSearchParams()
   const [allNurses, setAllNurses] = useState([])
   const [documentsByNurse, setDocumentsByNurse] = useState({})
   const [filter, setFilter] = useState('pending')
@@ -13,9 +15,20 @@ export default function AdminNurses() {
   const [expanded, setExpanded] = useState(null)
   const [feedback, setFeedback] = useState('')
 
-  const nurses = filter === 'all' ? allNurses : allNurses.filter(n => n.users?.status === filter)
+  const nurses = filter === 'all' ? allNurses : allNurses.filter((nurse) => nurse.users?.status === filter)
 
-  useEffect(() => { loadNurses() }, [])
+  useEffect(() => {
+    void loadNurses()
+  }, [])
+
+  useEffect(() => {
+    const targetId = searchParams.get('open')
+    if (!targetId || allNurses.length === 0) return
+    const match = allNurses.find((nurse) => nurse.id === targetId)
+    if (!match) return
+    setExpanded(match.id)
+    void loadDocuments(match.id)
+  }, [searchParams, allNurses])
 
   async function loadNurses() {
     setLoading(true)
@@ -23,6 +36,7 @@ export default function AdminNurses() {
       .from('nurse_profiles')
       .select('*, users!inner(id, email, status, full_name, created_at)')
       .order('created_at', { ascending: false })
+
     setAllNurses(data || [])
     setLoading(false)
   }
@@ -87,7 +101,10 @@ export default function AdminNurses() {
     setActionLoading(null)
   }
 
-  const counts = allNurses.reduce((acc, n) => { acc[n.users?.status] = (acc[n.users?.status] || 0) + 1; return acc }, {})
+  const counts = allNurses.reduce((accumulator, nurse) => {
+    accumulator[nurse.users?.status] = (accumulator[nurse.users?.status] || 0) + 1
+    return accumulator
+  }, {})
 
   return (
     <AdminLayout title="Nurse Management">
@@ -96,12 +113,15 @@ export default function AdminNurses() {
           {feedback}
         </div>
       )}
-      {/* Filter tabs */}
+
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
-        {[['all','All'],['pending','Pending'],['approved','Approved'],['rejected','Rejected'],['suspended','Suspended']].map(([val, label]) => (
-          <button key={val} onClick={() => setFilter(val)}
-            style={{ padding: '7px 16px', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer', border: filter === val ? '1px solid var(--deep-navy)' : '1px solid var(--border)', background: filter === val ? 'var(--deep-navy)' : 'white', color: filter === val ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}>
-            {label} {val !== 'all' && counts[val] ? `(${counts[val]})` : ''}
+        {[['all', 'All'], ['pending', 'Pending'], ['approved', 'Approved'], ['rejected', 'Rejected'], ['suspended', 'Suspended']].map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setFilter(value)}
+            style={{ padding: '7px 16px', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer', border: filter === value ? '1px solid var(--deep-navy)' : '1px solid var(--border)', background: filter === value ? 'var(--deep-navy)' : 'white', color: filter === value ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+          >
+            {label} {value !== 'all' && counts[value] ? `(${counts[value]})` : ''}
           </button>
         ))}
       </div>
@@ -114,16 +134,19 @@ export default function AdminNurses() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {nurses.map(nurse => {
-            const isExp = expanded === nurse.id
+          {nurses.map((nurse) => {
+            const isExpanded = expanded === nurse.id
             const status = nurse.users?.status
+
             return (
               <div key={nurse.id} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', cursor: 'pointer' }}
+                <div
+                  style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', cursor: 'pointer' }}
                   onClick={() => {
-                    setExpanded(isExp ? null : nurse.id)
-                    if (!isExp) void loadDocuments(nurse.id)
-                  }}>
+                    setExpanded(isExpanded ? null : nurse.id)
+                    if (!isExpanded) void loadDocuments(nurse.id)
+                  }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: 'Cormorant Garamond, serif', fontSize: '16px' }}>
                       {nurse.first_name?.[0]}{nurse.last_name?.[0]}
@@ -135,40 +158,45 @@ export default function AdminNurses() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <StatusBadge status={status} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{isExp ? '▲' : '▼'}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
                 </div>
 
-                {isExp && (
+                {isExpanded && (
                   <div style={{ borderTop: '1px solid var(--border)', padding: '20px' }}>
                     <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
                       {[
                         ['Specialty', nurse.specialty],
                         ['License No.', nurse.license_number],
                         ['License State', nurse.license_state],
-                        ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '—'],
-                        ['Shift Preference', nurse.shift_preference || '—'],
-                        ['Availability', nurse.availability || '—'],
-                      ].map(([label, val]) => (
+                        ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '-'],
+                        ['Shift Preference', nurse.shift_preference || '-'],
+                        ['Availability', nurse.availability || '-'],
+                      ].map(([label, value]) => (
                         <div key={label}>
                           <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '3px' }}>{label}</p>
-                          <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>{val || '—'}</p>
+                          <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>{value || '-'}</p>
                         </div>
                       ))}
                     </div>
+
                     {nurse.bio && (
                       <div style={{ marginBottom: '16px' }}>
                         <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Bio</p>
                         <p style={{ fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>{nurse.bio}</p>
                       </div>
                     )}
+
                     {(nurse.certifications || []).length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
-                        {nurse.certifications.map((c, i) => (
-                          <span key={i} style={{ padding: '3px 8px', background: 'rgba(126,181,200,0.1)', borderRadius: '2px', fontSize: '11px', color: 'var(--sky-blue)' }}>{c}</span>
+                        {nurse.certifications.map((certification, index) => (
+                          <span key={index} style={{ padding: '3px 8px', background: 'rgba(126,181,200,0.1)', borderRadius: '2px', fontSize: '11px', color: 'var(--sky-blue)' }}>
+                            {certification}
+                          </span>
                         ))}
                       </div>
                     )}
+
                     {(documentsByNurse[nurse.id] || []).length > 0 && (
                       <div style={{ marginBottom: '16px' }}>
                         <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '8px' }}>Certification Files</p>
@@ -178,8 +206,7 @@ export default function AdminNurses() {
                               <div>
                                 <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>{doc.title}</p>
                               </div>
-                              <button type="button" onClick={() => downloadDocument(doc.id)}
-                                style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                              <button type="button" onClick={() => downloadDocument(doc.id)} style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
                                 View
                               </button>
                             </div>
@@ -187,34 +214,30 @@ export default function AdminNurses() {
                         </div>
                       </div>
                     )}
+
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       {nurse.resume_url && (
-                        <a href={nurse.resume_url} target="_blank" rel="noreferrer"
-                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                          📄 View Resume
-                        </a>
+                        <button type="button" onClick={() => downloadPrimaryFile(nurse.id, 'resume')} style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          View Resume
+                        </button>
                       )}
                       {nurse.license_url && (
-                        <a href={nurse.license_url} target="_blank" rel="noreferrer"
-                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                          🪪 View License
-                        </a>
+                        <button type="button" onClick={() => downloadPrimaryFile(nurse.id, 'license')} style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                          View License
+                        </button>
                       )}
                       {status !== 'approved' && (
-                        <button onClick={() => approve(nurse.id)} disabled={actionLoading === nurse.id}
-                          style={{ padding: '8px 16px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
-                          {actionLoading === nurse.id ? '...' : '✓ Approve'}
+                        <button onClick={() => approve(nurse.id)} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                          {actionLoading === nurse.id ? '...' : 'Approve'}
                         </button>
                       )}
                       {status !== 'rejected' && status !== 'approved' && (
-                        <button onClick={() => reject(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id}
-                          style={{ padding: '8px 16px', background: 'rgba(180,60,60,0.9)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
-                          ✗ Reject
+                        <button onClick={() => reject(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'rgba(180,60,60,0.9)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                          Reject
                         </button>
                       )}
                       {status === 'approved' && (
-                        <button onClick={() => suspend(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id}
-                          style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                        <button onClick={() => suspend(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
                           Suspend
                         </button>
                       )}

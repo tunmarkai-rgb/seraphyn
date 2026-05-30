@@ -256,6 +256,20 @@ export default function EmployerDashboard() {
                         </span>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {app.nurse_id && (
+                          <Link
+                            to={`/nurses/${app.nurse_id}`}
+                            style={{ padding: '4px 8px', fontSize: '10px', letterSpacing: '0.04em', border: '1px solid var(--border)', borderRadius: '2px', background: 'transparent', color: 'var(--deep-navy)', cursor: 'pointer', textTransform: 'uppercase', textDecoration: 'none' }}
+                          >
+                            View Profile
+                          </Link>
+                        )}
+                        <Link
+                          to={`/messages?app=${app.id}`}
+                          style={{ padding: '4px 8px', fontSize: '10px', letterSpacing: '0.04em', border: '1px solid var(--sky-blue)', borderRadius: '2px', background: 'transparent', color: 'var(--sky-blue)', cursor: 'pointer', textTransform: 'uppercase', textDecoration: 'none' }}
+                        >
+                          Message Nurse
+                        </Link>
                         {['reviewing', 'interview', 'offer', 'hired', 'rejected'].map((status) => (
                           status !== app.status && (
                             <button

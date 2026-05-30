@@ -6,6 +6,36 @@ const { createMessageNotification } = require('../lib/notifications')
 
 router.use(requireAuth, requireRole('nurse', 'employer', 'admin'))
 
+async function loadApplicationForMessaging(applicationId) {
+  const { data, error } = await supabase
+    .from('applications')
+    .select(`
+      id,
+      status,
+      employer_id,
+      nurse_id,
+      nurse_profiles!inner(id, user_id, first_name, last_name),
+      employer_profiles!inner(id, user_id, org_name),
+      jobs(title, city, state)
+    `)
+    .eq('id', applicationId)
+    .single()
+
+  if (error || !data) {
+    return null
+  }
+
+  return data
+}
+
+function userCanAccessApplication(application, user) {
+  if (!application || !user) return false
+  if (user.role === 'admin') return true
+  if (user.role === 'nurse') return application.nurse_profiles?.user_id === user.id
+  if (user.role === 'employer') return application.employer_profiles?.user_id === user.id
+  return false
+}
+
 router.get('/threads', async (req, res) => {
   const { data, error } = await supabase
     .from('messages')
@@ -40,12 +70,40 @@ router.get('/threads', async (req, res) => {
   res.json(threads)
 })
 
+router.get('/thread/:applicationId', async (req, res) => {
+  const application = await loadApplicationForMessaging(req.params.applicationId)
+  if (!application) {
+    return res.status(404).json({ error: 'Application not found' })
+  }
+
+  if (!userCanAccessApplication(application, req.user)) {
+    return res.status(403).json({ error: 'Not authorized to access this application thread' })
+  }
+
+  res.json({
+    application_id: application.id,
+    sender_id: null,
+    receiver_id: null,
+    created_at: null,
+    read: true,
+    applications: application
+  })
+})
+
 router.get('/:applicationId', async (req, res) => {
+  const application = await loadApplicationForMessaging(req.params.applicationId)
+  if (!application) {
+    return res.status(404).json({ error: 'Application not found' })
+  }
+
+  if (!userCanAccessApplication(application, req.user)) {
+    return res.status(403).json({ error: 'Not authorized to access this application thread' })
+  }
+
   const { data, error } = await supabase
     .from('messages')
     .select('*')
     .eq('application_id', req.params.applicationId)
-    .or(`sender_id.eq.${req.user.id},receiver_id.eq.${req.user.id}`)
     .order('created_at', { ascending: true })
 
   if (error) {
@@ -76,21 +134,13 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'applicationId and content are required' })
   }
 
-  const { data: application, error: applicationError } = await supabase
-    .from('applications')
-    .select(`
-      id,
-      nurse_id,
-      employer_id,
-      nurse_profiles!inner(user_id, first_name, last_name),
-      employer_profiles!inner(user_id, org_name),
-      jobs(title)
-    `)
-    .eq('id', applicationId)
-    .single()
-
-  if (applicationError || !application) {
+  const application = await loadApplicationForMessaging(applicationId)
+  if (!application) {
     return res.status(404).json({ error: 'Application not found' })
+  }
+
+  if (!userCanAccessApplication(application, req.user)) {
+    return res.status(403).json({ error: 'Not authorized to message on this application' })
   }
 
   let resolvedReceiverId = receiverId || null
