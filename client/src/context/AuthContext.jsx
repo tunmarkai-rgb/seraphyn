@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { getAppBaseUrl, supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
+const ADMIN_EMAIL_ALLOWLIST = new Set(['kundayiw@gmail.com', 'info@seraphyncare.com'])
 
 function hasValue(value) {
   if (value === null || value === undefined) return false
@@ -29,7 +30,7 @@ function normalizeShiftPreference(value, fallback = null) {
   return legacyAnyValues.has(raw) ? 'any' : fallback
 }
 
-async function inferRoleFromProfileTables(userId) {
+async function inferRoleFromProfileTables(userId, email = '') {
   if (!userId) return ''
 
   const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
@@ -39,6 +40,7 @@ async function inferRoleFromProfileTables(userId) {
 
   if (nurseProfile?.user_id) return 'nurse'
   if (employerProfile?.user_id) return 'employer'
+  if (ADMIN_EMAIL_ALLOWLIST.has(String(email || '').toLowerCase())) return 'admin'
   return ''
 }
 
@@ -46,7 +48,7 @@ async function bootstrapNurseProfileFromMetadata(user) {
   if (!user?.id) return
 
   const metadata = user.user_metadata || {}
-  const inferredRole = metadata.role || await inferRoleFromProfileTables(user.id)
+  const inferredRole = metadata.role || await inferRoleFromProfileTables(user.id, user.email)
   if (inferredRole !== 'nurse') return
 
   const profileSeed = {
@@ -97,7 +99,7 @@ async function bootstrapEmployerProfileFromMetadata(user) {
   if (!user?.id) return
 
   const metadata = user.user_metadata || {}
-  const inferredRole = metadata.role || await inferRoleFromProfileTables(user.id)
+  const inferredRole = metadata.role || await inferRoleFromProfileTables(user.id, user.email)
   if (inferredRole !== 'employer') return
 
   const profileSeed = {
@@ -160,7 +162,7 @@ export function AuthProvider({ children }) {
       setUser(session?.user ?? null)
       if (session?.user) {
         bootstrapProfileFromMetadata(session.user)
-          .finally(() => fetchProfile(session.user.id, session.user.user_metadata || {}))
+          .finally(() => fetchProfile(session.user.id, session.user.user_metadata || {}, session.user.email || ''))
       }
       else setLoading(false)
     })
@@ -171,7 +173,7 @@ export function AuthProvider({ children }) {
         setUser(session?.user ?? null)
         if (session?.user) {
           bootstrapProfileFromMetadata(session.user)
-            .finally(() => fetchProfile(session.user.id, session.user.user_metadata || {}))
+            .finally(() => fetchProfile(session.user.id, session.user.user_metadata || {}, session.user.email || ''))
         }
         else {
           setProfile(null)
@@ -183,7 +185,7 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const fetchProfile = async (userId, metadata = {}) => {
+  const fetchProfile = async (userId, metadata = {}, email = '') => {
     try {
       const { data, error } = await supabase
         .from('users')
@@ -195,7 +197,7 @@ export function AuthProvider({ children }) {
         return
       }
 
-      const inferredRole = metadata.role || await inferRoleFromProfileTables(userId)
+      const inferredRole = metadata.role || await inferRoleFromProfileTables(userId, email || metadata.email || '')
       if (inferredRole) {
         setProfile({
           id: userId,

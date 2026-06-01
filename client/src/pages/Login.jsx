@@ -4,7 +4,9 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import BrandLogo from '../components/BrandLogo'
 
-async function resolveRole(userId, fallbackRole = '') {
+const ADMIN_EMAIL_ALLOWLIST = new Set(['kundayiw@gmail.com', 'info@seraphyncare.com'])
+
+async function resolveRole(userId, fallbackRole = '', email = '') {
   if (!userId) return fallbackRole
 
   const { data, error } = await supabase
@@ -24,6 +26,7 @@ async function resolveRole(userId, fallbackRole = '') {
 
   if (nurseProfile?.user_id) return 'nurse'
   if (employerProfile?.user_id) return 'employer'
+  if (ADMIN_EMAIL_ALLOWLIST.has(String(email || '').toLowerCase())) return 'admin'
 
   if (error) {
     console.error('Failed to resolve login role:', error.message)
@@ -54,7 +57,7 @@ export default function Login() {
     try {
       const { data, error } = await signIn(form.email, form.password)
       if (error) throw error
-      const role = await resolveRole(data.user.id, data.user.user_metadata?.role)
+      const role = await resolveRole(data.user.id, data.user.user_metadata?.role, data.user.email || '')
       if (role === 'nurse') navigate('/nurse/dashboard')
       else if (role === 'employer') navigate('/employer/dashboard')
       else if (role === 'admin') navigate('/admin')
