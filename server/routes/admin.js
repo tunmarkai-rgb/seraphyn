@@ -153,7 +153,28 @@ router.get('/employers', async (req, res) => {
   if (status) query = query.eq('users.status', status)
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  const employerIds = (data || []).map((employer) => employer.id)
+  let latestApplicationsByEmployer = {}
+
+  if (employerIds.length > 0) {
+    const { data: applications } = await supabase
+      .from('applications')
+      .select('id, employer_id, status, created_at, jobs(title), nurse_profiles(first_name, last_name)')
+      .in('employer_id', employerIds)
+      .order('created_at', { ascending: false })
+
+    for (const application of applications || []) {
+      if (!latestApplicationsByEmployer[application.employer_id]) {
+        latestApplicationsByEmployer[application.employer_id] = application
+      }
+    }
+  }
+
+  res.json((data || []).map((employer) => ({
+    ...employer,
+    latest_application: latestApplicationsByEmployer[employer.id] || null
+  })))
 })
 
 // PUT /api/admin/employers/:id/status
