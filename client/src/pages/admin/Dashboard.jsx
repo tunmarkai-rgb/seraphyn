@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import AdminLayout from '../../components/AdminLayout'
+import { apiRequest } from '../../lib/api'
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null)
@@ -12,29 +12,23 @@ export default function AdminDashboard() {
 
   async function loadData() {
     setLoading(true)
-    const [
-      { count: totalNurses },
-      { count: totalEmployers },
-      { count: activeJobs },
-      { count: totalApps },
-      { count: pendingNurses },
-      { count: pendingEmployers },
-      { data: recentNurses },
-      { data: recentEmployers },
-    ] = await Promise.all([
-      supabase.from('nurse_profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('employer_profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase.from('applications').select('*', { count: 'exact', head: true }),
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'nurse').eq('status', 'pending'),
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'employer').eq('status', 'pending'),
-      supabase.from('nurse_profiles').select('*, users(email, status)').order('created_at', { ascending: false }).limit(3),
-      supabase.from('employer_profiles').select('*, users(email, status)').order('created_at', { ascending: false }).limit(3),
-    ])
-
-    setStats({ totalNurses, totalEmployers, activeJobs, totalApps, pendingNurses, pendingEmployers })
-    setPending({ nurses: recentNurses || [], employers: recentEmployers || [] })
-    setLoading(false)
+    try {
+      const data = await apiRequest('/api/admin/stats')
+      setStats({
+        totalNurses: data.totalNurses || 0,
+        totalEmployers: data.totalEmployers || 0,
+        activeJobs: data.activeJobs || 0,
+        totalApps: data.totalApplications || 0,
+        pendingNurses: data.pendingNurses || 0,
+        pendingEmployers: data.pendingEmployers || 0
+      })
+      setPending({
+        nurses: data.recentNurses || [],
+        employers: data.recentEmployers || []
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const statCards = stats ? [

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getAppBaseUrl, supabase } from '../lib/supabase'
-import { SPECIALTIES, US_STATES } from '../lib/constants'
+import { NURSE_SHIFT_PREFERENCES, SPECIALTIES, US_STATES } from '../lib/constants'
 import { apiRequest, publicApiRequest } from '../lib/api'
 import BrandLogo from '../components/BrandLogo'
 
@@ -37,21 +37,10 @@ function normalizeYearsExperience(value) {
 function normalizeShiftPreference(value) {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return ''
-  if (raw === 'any') return 'any'
-
-  const legacyAnyValues = new Set([
-    'day',
-    'night',
-    'evening',
-    'mixed',
-    'per diem',
-    'contract travel',
-    'permanent',
-    'flexible',
-    'mixed / flexible'
-  ])
-
-  return legacyAnyValues.has(raw) ? 'any' : ''
+  if (raw === 'per diem') return 'Per Diem'
+  if (raw === 'contract travel') return 'Contract Travel'
+  if (raw === 'permanent') return 'Permanent'
+  return ''
 }
 
 export default function NurseSignup() {
@@ -169,7 +158,29 @@ export default function NurseSignup() {
       )
       if (signUpError) throw signUpError
 
-      if (data?.user?.id) {
+        if (data?.user?.id) {
+        try {
+          await publicApiRequest('/api/integrations/signup-alert', {
+            method: 'POST',
+            body: {
+              userId: data.user.id,
+              role: 'nurse',
+              email: form.email,
+              fullName: `${form.firstName} ${form.lastName}`.trim(),
+              profile: {
+                first_name: form.firstName,
+                last_name: form.lastName,
+                specialty: form.specialty,
+                license_state: form.licenseState,
+                years_experience: expMap[form.yearsExperience] || null,
+                shift_preference: normalizedShiftPreference || null
+              }
+            }
+          })
+        } catch (signupAlertError) {
+          console.error('Nurse signup alert failed:', signupAlertError.message)
+        }
+
         const { error: profileUpsertError } = await supabase.from('nurse_profiles').upsert({
           user_id: data.user.id,
           first_name: form.firstName,
@@ -357,7 +368,7 @@ export default function NurseSignup() {
               <select name="shiftPreference" value={form.shiftPreference} onChange={handle}
                 style={{ width: '100%', padding: '11px 14px', background: 'white', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '14px', outline: 'none', color: 'var(--charcoal)' }}>
                 <option value="">Select...</option>
-                <option value="any">Flexible / Any Shift</option>
+                {NURSE_SHIFT_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
 

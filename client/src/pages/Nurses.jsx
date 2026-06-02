@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
-import { SPECIALTIES } from '../lib/constants'
+import { NURSE_AVAILABILITY_OPTIONS, SPECIALTIES } from '../lib/constants'
 
 export default function NurseDirectory() {
   const { user, profile } = useAuth()
@@ -111,10 +111,7 @@ export default function NurseDirectory() {
                 <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Availability</label>
                 <select name="availability" value={filters.availability} onChange={handleFilter} style={selectStyle}>
                   <option value="">Any</option>
-                  <option value="Immediately">Immediately</option>
-                  <option value="2 Weeks">2 Weeks</option>
-                  <option value="1 Month">1 Month</option>
-                  <option value="Per Diem">Per Diem Only</option>
+                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </div>
               <div>

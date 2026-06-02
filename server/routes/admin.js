@@ -20,6 +20,8 @@ router.get('/stats', async (req, res) => {
     { count: pendingNurses },
     { count: pendingEmployers },
     { data: recentPayments },
+    { data: recentNurses },
+    { data: recentEmployers },
   ] = await Promise.all([
     supabase.from('nurse_profiles').select('*', { count: 'exact', head: true }),
     supabase.from('employer_profiles').select('*', { count: 'exact', head: true }),
@@ -28,13 +30,17 @@ router.get('/stats', async (req, res) => {
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'nurse').eq('status', 'pending'),
     supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'employer').eq('status', 'pending'),
     supabase.from('payments').select('amount').eq('status', 'succeeded'),
+    supabase.from('nurse_profiles').select('*, users(email, status)').order('created_at', { ascending: false }).limit(3),
+    supabase.from('employer_profiles').select('*, users(email, status)').order('created_at', { ascending: false }).limit(3),
   ])
 
   const totalRevenue = (recentPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0)
 
   res.json({
     totalNurses, totalEmployers, activeJobs, totalApplications,
-    pendingNurses, pendingEmployers, totalRevenue
+    pendingNurses, pendingEmployers, totalRevenue,
+    recentNurses: recentNurses || [],
+    recentEmployers: recentEmployers || []
   })
 })
 

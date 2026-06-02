@@ -16,6 +16,19 @@ export const SPECIALTIES = [
   'Other',
 ]
 
+export const NURSE_SHIFT_PREFERENCES = [
+  'Per Diem',
+  'Contract Travel',
+  'Permanent'
+]
+
+export const NURSE_AVAILABILITY_OPTIONS = [
+  'Immediate',
+  '2 Weeks',
+  '30 Days',
+  'Not Available'
+]
+
 export const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
   'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',

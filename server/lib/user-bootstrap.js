@@ -9,38 +9,20 @@ function hasValue(value) {
 function normalizeShiftPreference(value, fallback = null) {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return fallback
-
-  if (raw === 'any') return 'any'
-
-  const legacyAnyValues = new Set([
-    'day',
-    'night',
-    'evening',
-    'mixed',
-    'per diem',
-    'contract travel',
-    'permanent',
-    'flexible',
-    'mixed / flexible'
-  ])
-
-  return legacyAnyValues.has(raw) ? 'any' : fallback
+  if (raw === 'per diem') return 'Per Diem'
+  if (raw === 'contract travel') return 'Contract Travel'
+  if (raw === 'permanent') return 'Permanent'
+  return fallback
 }
 
 function normalizeAvailability(value, fallback = null) {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return fallback
-  if (raw === 'available') return 'available'
-
-  const legacyAvailableValues = new Set([
-    'immediately',
-    'available now',
-    '2 weeks',
-    '1 month',
-    'per diem'
-  ])
-
-  return legacyAvailableValues.has(raw) ? 'available' : fallback
+  if (raw === 'immediate' || raw === 'immediately' || raw === 'available now') return 'Immediate'
+  if (raw === '2 weeks') return '2 Weeks'
+  if (raw === '30 days' || raw === '1 month') return '30 Days'
+  if (raw === 'not available') return 'Not Available'
+  return fallback
 }
 
 async function getPublicUserById(userId) {

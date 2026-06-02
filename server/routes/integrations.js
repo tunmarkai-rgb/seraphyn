@@ -6,6 +6,104 @@ const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sy
 const { dispatchPortalEvent } = require('../lib/portal-events')
 const { syncNurseCompletionByUserId } = require('../lib/nurse-completion')
 const { notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
+const { normalizeShiftPreference } = require('../lib/user-bootstrap')
+
+router.post('/signup-alert', async (req, res) => {
+  const { userId, role, email, fullName, profile = {} } = req.body || {}
+
+  if (!userId || !role || !email || !['nurse', 'employer'].includes(role)) {
+    return res.status(400).json({ error: 'userId, role, and email are required' })
+  }
+
+  try {
+    const now = new Date().toISOString()
+
+    await supabase
+      .from('users')
+      .upsert({
+        id: userId,
+        role,
+        status: 'pending',
+        full_name: fullName || '',
+        email,
+        updated_at: now,
+        created_at: now
+      }, { onConflict: 'id' })
+
+    if (role === 'nurse') {
+      const { data: nurseProfile } = await supabase
+        .from('nurse_profiles')
+        .upsert({
+          user_id: userId,
+          first_name: profile.first_name || '',
+          last_name: profile.last_name || '',
+          specialty: profile.specialty || '',
+          license_state: profile.license_state || '',
+          years_experience: profile.years_experience ?? null,
+          shift_preference: normalizeShiftPreference(profile.shift_preference || '', null),
+          updated_at: now,
+          created_at: now
+        }, { onConflict: 'user_id' })
+        .select('id, specialty')
+        .single()
+
+      await notifyAdmins({
+        type: 'nurse.signup_pending',
+        title: 'New nurse signup',
+        body: `${fullName || email} started a nurse signup.`,
+        entityType: 'nurse_profile',
+        entityId: nurseProfile?.id || null,
+        metadata: {
+          email,
+          specialty: nurseProfile?.specialty || profile.specialty || null
+        }
+      })
+
+      await notifyInternalInbox({
+        subject: 'Seraphyn: new nurse signup',
+        title: 'New nurse signup awaiting review',
+        body: `${fullName || email} started a nurse signup.`
+      })
+
+      return res.json({ ok: true, role, nurseProfileId: nurseProfile?.id || null })
+    }
+
+    const { data: employerProfile } = await supabase
+      .from('employer_profiles')
+      .upsert({
+        user_id: userId,
+        org_name: profile.org_name || '',
+        contact_name: profile.contact_name || fullName || '',
+        org_type: profile.org_type || '',
+        state: profile.state || '',
+        onboarding_stage: profile.onboarding_stage || 'profile',
+        updated_at: now,
+        created_at: now
+      }, { onConflict: 'user_id' })
+      .select('id, org_name')
+      .single()
+
+    await notifyAdmins({
+      type: 'employer.signup_pending',
+      title: 'New employer signup',
+      body: `${employerProfile?.org_name || fullName || email} started an employer signup.`,
+      entityType: 'employer_profile',
+      entityId: employerProfile?.id || null,
+      metadata: { email }
+    })
+
+    await notifyInternalInbox({
+      subject: 'Seraphyn: new employer signup',
+      title: 'New employer signup awaiting review',
+      body: `${employerProfile?.org_name || fullName || email} started an employer signup.`
+    })
+
+    return res.json({ ok: true, role, employerProfileId: employerProfile?.id || null })
+  } catch (error) {
+    console.error('Public signup alert failed:', error.message)
+    return res.status(500).json({ error: error.message || 'Failed to record signup' })
+  }
+})
 
 router.post('/ghl/sync-self', requireAuth, requireRole('nurse', 'employer'), async (req, res) => {
   try {

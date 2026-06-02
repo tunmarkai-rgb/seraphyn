@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getAppBaseUrl, supabase } from '../lib/supabase'
-import { apiRequest } from '../lib/api'
+import { apiRequest, publicApiRequest } from '../lib/api'
 import BrandLogo from '../components/BrandLogo'
 
 export default function EmployerSignup() {
@@ -62,6 +62,27 @@ export default function EmployerSignup() {
       if (error) throw error
 
       if (data?.user?.id) {
+        try {
+          await publicApiRequest('/api/integrations/signup-alert', {
+            method: 'POST',
+            body: {
+              userId: data.user.id,
+              role: 'employer',
+              email: form.email,
+              fullName: form.contactName,
+              profile: {
+                org_name: form.orgName,
+                contact_name: form.contactName,
+                org_type: form.orgType,
+                state: form.state,
+                onboarding_stage: 'profile'
+              }
+            }
+          })
+        } catch (signupAlertError) {
+          console.error('Employer signup alert failed:', signupAlertError.message)
+        }
+
         const { error: profileUpsertError } = await supabase.from('employer_profiles').upsert({
           user_id: data.user.id,
           org_name: form.orgName,

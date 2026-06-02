@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
-import { SPECIALTIES, US_STATES } from '../../lib/constants'
+import { NURSE_AVAILABILITY_OPTIONS, NURSE_SHIFT_PREFERENCES, SPECIALTIES, US_STATES } from '../../lib/constants'
 import { apiRequest } from '../../lib/api'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
@@ -11,37 +11,20 @@ const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NI
 function normalizeShiftPreference(value) {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return ''
-  if (raw === 'any') return 'any'
-
-  const legacyAnyValues = new Set([
-    'day',
-    'night',
-    'evening',
-    'mixed',
-    'per diem',
-    'contract travel',
-    'permanent',
-    'flexible',
-    'mixed / flexible'
-  ])
-
-  return legacyAnyValues.has(raw) ? 'any' : ''
+  if (raw === 'per diem') return 'Per Diem'
+  if (raw === 'contract travel') return 'Contract Travel'
+  if (raw === 'permanent') return 'Permanent'
+  return ''
 }
 
 function normalizeAvailability(value) {
   const raw = String(value || '').trim().toLowerCase()
   if (!raw) return ''
-  if (raw === 'available') return 'available'
-
-  const legacyAvailableValues = new Set([
-    'immediately',
-    'available now',
-    '2 weeks',
-    '1 month',
-    'per diem'
-  ])
-
-  return legacyAvailableValues.has(raw) ? 'available' : ''
+  if (raw === 'immediate' || raw === 'immediately' || raw === 'available now') return 'Immediate'
+  if (raw === '2 weeks') return '2 Weeks'
+  if (raw === '30 days' || raw === '1 month') return '30 Days'
+  if (raw === 'not available') return 'Not Available'
+  return ''
 }
 
 export default function NurseProfile() {
@@ -343,7 +326,7 @@ export default function NurseProfile() {
                   <label style={labelStyle}>Shift Preference</label>
                   <select name="shift_preference" value={form.shift_preference} onChange={handle} style={inputStyle}>
                     <option value="">Select...</option>
-                    <option value="any">Flexible / Any Shift</option>
+                    {NURSE_SHIFT_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </div>
               </div>
@@ -351,7 +334,7 @@ export default function NurseProfile() {
                 <label style={labelStyle}>Availability</label>
                 <select name="availability" value={form.availability} onChange={handle} style={inputStyle}>
                   <option value="">Select...</option>
-                  <option value="available">Available</option>
+                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </div>
               <div>
