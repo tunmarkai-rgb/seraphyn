@@ -54,7 +54,28 @@ router.get('/nurses', async (req, res) => {
   if (status) query = query.eq('users.status', status)
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  const nurseIds = (data || []).map((nurse) => nurse.id)
+  let latestApplicationsByNurse = {}
+
+  if (nurseIds.length > 0) {
+    const { data: applications } = await supabase
+      .from('applications')
+      .select('id, nurse_id, status, created_at, jobs(title)')
+      .in('nurse_id', nurseIds)
+      .order('created_at', { ascending: false })
+
+    for (const application of applications || []) {
+      if (!latestApplicationsByNurse[application.nurse_id]) {
+        latestApplicationsByNurse[application.nurse_id] = application
+      }
+    }
+  }
+
+  res.json((data || []).map((nurse) => ({
+    ...nurse,
+    latest_application: latestApplicationsByNurse[nurse.id] || null
+  })))
 })
 
 // PUT /api/admin/nurses/:id/status
@@ -311,10 +332,187 @@ router.post('/nurses/:id/sync-contact', async (req, res) => {
 
 // GET /api/admin/applications
 router.get('/applications', async (req, res) => {
-  const { data, error } = await supabase
+  const { status } = req.query
+  let query = supabase
     .from('applications')
-    .select('*, jobs(title, city, state, specialty), nurse_profiles(first_name, last_name), employer_profiles(org_name)')
+    .select('*, jobs(title, city, state, specialty), nurse_profiles(id, first_name, last_name), employer_profiles(org_name)')
     .order('created_at', { ascending: false })
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// GET /api/admin/payments
+router.get('/payments', async (req, res) => {
+  const { type = 'all', status = 'all' } = req.query
+  let query = supabase
+    .from('payments')
+    .select('*, employer_profiles(org_name)')
+    .order('created_at', { ascending: false })
+
+  if (type !== 'all') query = query.eq('type', type)
+  if (status !== 'all') query = query.eq('status', status)
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+
+  const payments = data || []
+  const succeeded = payments.filter((payment) => payment.status === 'succeeded')
+  const monthly = {}
+
+  for (const payment of succeeded) {
+    const key = new Date(payment.created_at).toISOString().slice(0, 7)
+    monthly[key] = (monthly[key] || 0) + (Number(payment.amount) || 0)
+  }
+
+  res.json({
+    payments,
+    analytics: {
+      totalRevenue: succeeded.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      subscriptionRevenue: succeeded
+        .filter((payment) => payment.type === 'subscription')
+        .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      placementRevenue: succeeded
+        .filter((payment) => payment.type === 'placement_fee')
+        .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      succeededCount: payments.filter((payment) => payment.status === 'succeeded').length,
+      pendingCount: payments.filter((payment) => payment.status === 'pending').length,
+      failedCount: payments.filter((payment) => payment.status === 'failed').length,
+      refundedCount: payments.filter((payment) => payment.status === 'refunded').length,
+      monthlyRevenue: Object.entries(monthly)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, amount]) => ({ month, amount }))
+    }
+  })
+})
+
+// POST /api/admin/payments
+router.post('/payments', async (req, res) => {
+  const {
+    employer_id,
+    type,
+    amount,
+    currency = 'usd',
+    placement_percentage = null,
+    job_id = null,
+    application_id = null,
+    status = 'pending',
+    notes = ''
+  } = req.body || {}
+
+  if (!employer_id || !type || amount === undefined || amount === null) {
+    return res.status(400).json({ error: 'employer_id, type, and amount are required' })
+  }
+
+  if (!['subscription', 'placement_fee'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid payment type' })
+  }
+
+  if (!['pending', 'succeeded', 'failed', 'refunded'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid payment status' })
+  }
+
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      employer_id,
+      type,
+      amount,
+      currency,
+      placement_percentage,
+      job_id,
+      application_id,
+      status,
+      notes,
+      created_at: now,
+      updated_at: now
+    })
+    .select('*, employer_profiles(org_name)')
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// PUT /api/admin/payments/:id
+router.put('/payments/:id', async (req, res) => {
+  const allowed = [
+    'employer_id',
+    'type',
+    'amount',
+    'currency',
+    'placement_percentage',
+    'job_id',
+    'application_id',
+    'status',
+    'notes'
+  ]
+
+  const updates = { updated_at: new Date().toISOString() }
+  for (const key of allowed) {
+    if (req.body?.[key] !== undefined) {
+      updates[key] = req.body[key]
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('payments')
+    .update(updates)
+    .eq('id', req.params.id)
+    .select('*, employer_profiles(org_name)')
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// DELETE /api/admin/payments/:id
+router.delete('/payments/:id', async (req, res) => {
+  const { error } = await supabase
+    .from('payments')
+    .delete()
+    .eq('id', req.params.id)
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ message: 'Payment deleted' })
+})
+
+// GET /api/admin/shifts
+router.get('/shifts', async (req, res) => {
+  const { status = 'all' } = req.query
+  let query = supabase
+    .from('per_diem_shifts')
+    .select('*, employer_profiles(org_name, city, state), nurse_profiles(first_name, last_name)')
+    .order('shift_date', { ascending: true })
+
+  if (status !== 'all') {
+    query = query.eq('status', status)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// PUT /api/admin/shifts/:id
+router.put('/shifts/:id', async (req, res) => {
+  const updates = { updated_at: new Date().toISOString() }
+  if (req.body?.status !== undefined) updates.status = req.body.status
+  if (req.body?.admin_notes !== undefined) updates.admin_notes = req.body.admin_notes
+
+  const { data, error } = await supabase
+    .from('per_diem_shifts')
+    .update(updates)
+    .eq('id', req.params.id)
+    .select('*, employer_profiles(org_name, city, state), nurse_profiles(first_name, last_name)')
+    .single()
+
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })

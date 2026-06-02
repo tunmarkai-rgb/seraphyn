@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 
 const STATUS_COLORS = {
@@ -15,33 +15,31 @@ export default function AdminShifts() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
 
-  useEffect(() => { loadShifts() }, [filter])
+  useEffect(() => { void loadShifts() }, [filter])
 
   async function loadShifts() {
     setLoading(true)
-    const query = supabase
-      .from('per_diem_shifts')
-      .select(`
-        *,
-        employer_profiles(org_name, city, state),
-        nurse_profiles(first_name, last_name)
-      `)
-      .order('shift_date', { ascending: true })
-    if (filter !== 'all') query.eq('status', filter)
-    const { data } = await query
+    const data = await apiRequest(`/api/admin/shifts?status=${encodeURIComponent(filter)}`)
     setShifts(data || [])
     setLoading(false)
   }
 
   async function updateStatus(shiftId, status) {
     setActionLoading(shiftId)
-    await supabase.from('per_diem_shifts').update({ status, updated_at: new Date().toISOString() }).eq('id', shiftId)
-    setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, status } : s))
+    const updated = await apiRequest(`/api/admin/shifts/${shiftId}`, {
+      method: 'PUT',
+      body: { status }
+    })
+    setShifts(prev => prev.map(s => s.id === shiftId ? updated : s))
     setActionLoading(null)
   }
 
   async function updateAdminNote(shiftId, note) {
-    await supabase.from('per_diem_shifts').update({ admin_notes: note }).eq('id', shiftId)
+    const updated = await apiRequest(`/api/admin/shifts/${shiftId}`, {
+      method: 'PUT',
+      body: { admin_notes: note }
+    })
+    setShifts(prev => prev.map(s => s.id === shiftId ? updated : s))
   }
 
   return (

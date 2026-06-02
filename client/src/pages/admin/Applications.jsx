@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 
 const STATUS_CONFIG = {
@@ -17,24 +17,15 @@ export default function AdminApplications() {
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [savingNote, setSavingNote] = useState(null)
+  const [updatingStatus, setUpdatingStatus] = useState(null)
   const [notes, setNotes] = useState({})
   const [placementFees, setPlacementFees] = useState({})
 
-  useEffect(() => { loadApps() }, [filter])
+  useEffect(() => { void loadApps() }, [filter])
 
   async function loadApps() {
     setLoading(true)
-    const query = supabase
-      .from('applications')
-      .select(`
-        *,
-        jobs(title, city, state, specialty),
-        nurse_profiles(id, first_name, last_name, specialty),
-        employer_profiles(org_name)
-      `)
-      .order('created_at', { ascending: false })
-    if (filter !== 'all') query.eq('status', filter)
-    const { data } = await query
+    const data = await apiRequest(`/api/admin/applications${filter !== 'all' ? `?status=${encodeURIComponent(filter)}` : ''}`)
     setApps(data || [])
     const initialNotes = {}
     const initialFees = {};
@@ -49,12 +40,24 @@ export default function AdminApplications() {
 
   async function saveNote(appId) {
     setSavingNote(appId)
-    await supabase.from('applications').update({
-      admin_notes: notes[appId],
-      placement_fee_pct: placementFees[appId] ? parseFloat(placementFees[appId]) : null,
-      updated_at: new Date().toISOString()
-    }).eq('id', appId)
+    await apiRequest(`/api/admin/applications/${appId}`, {
+      method: 'PUT',
+      body: {
+        admin_notes: notes[appId],
+        placement_fee_pct: placementFees[appId] ? parseFloat(placementFees[appId]) : null
+      }
+    })
     setSavingNote(null)
+  }
+
+  async function updateStatus(appId, status) {
+    setUpdatingStatus(appId)
+    const updated = await apiRequest(`/api/admin/applications/${appId}`, {
+      method: 'PUT',
+      body: { status }
+    })
+    setApps((prev) => prev.map((app) => (app.id === appId ? { ...app, ...updated } : app)))
+    setUpdatingStatus(null)
   }
 
   return (
@@ -123,6 +126,19 @@ export default function AdminApplications() {
                       View Candidate
                     </Link>
                   )}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Status</label>
+                    <select
+                      value={app.status}
+                      onChange={(e) => updateStatus(app.id, e.target.value)}
+                      disabled={updatingStatus === app.id}
+                      style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '13px', outline: 'none', fontFamily: 'DM Sans', color: 'var(--deep-navy)', background: 'white' }}
+                    >
+                      {Object.entries(STATUS_CONFIG).map(([value, config]) => (
+                        <option key={value} value={value}>{config.label}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Admin Note</label>
                     <input value={notes[app.id] || ''} onChange={e => setNotes({ ...notes, [app.id]: e.target.value })}
