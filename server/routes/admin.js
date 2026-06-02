@@ -57,6 +57,33 @@ router.get('/nurses', async (req, res) => {
   res.json(data)
 })
 
+// PUT /api/admin/nurses/:id/status
+router.put('/nurses/:id/status', async (req, res) => {
+  const { status } = req.body || {}
+  if (!['pending', 'approved', 'rejected', 'suspended'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid nurse status' })
+  }
+
+  const { data: nurse } = await supabase
+    .from('nurse_profiles')
+    .select('id, user_id')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!nurse) {
+    return res.status(404).json({ error: 'Nurse not found' })
+  }
+
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('users')
+    .update({ status, updated_at: now })
+    .eq('id', nurse.user_id)
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ message: 'Nurse status updated', status })
+})
+
 // PUT /api/admin/nurses/:id/approve
 router.put('/nurses/:id/approve', async (req, res) => {
   const { data: np } = await supabase.from('nurse_profiles').select('user_id').eq('id', req.params.id).single()
@@ -100,12 +127,39 @@ router.get('/employers', async (req, res) => {
   const { status } = req.query
   let query = supabase
     .from('employer_profiles')
-    .select('*, users!inner(id, email, status, full_name, created_at)')
+    .select('*, users!inner(id, email, status, full_name, created_at), contracts(*)')
     .order('created_at', { ascending: false })
   if (status) query = query.eq('users.status', status)
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// PUT /api/admin/employers/:id/status
+router.put('/employers/:id/status', async (req, res) => {
+  const { status } = req.body || {}
+  if (!['pending', 'approved', 'rejected', 'suspended'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid employer status' })
+  }
+
+  const { data: employer } = await supabase
+    .from('employer_profiles')
+    .select('id, user_id')
+    .eq('id', req.params.id)
+    .single()
+
+  if (!employer) {
+    return res.status(404).json({ error: 'Employer not found' })
+  }
+
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('users')
+    .update({ status, updated_at: now })
+    .eq('id', employer.user_id)
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ message: 'Employer status updated', status })
 })
 
 // PUT /api/admin/employers/:id/approve
@@ -261,6 +315,41 @@ router.get('/applications', async (req, res) => {
     .from('applications')
     .select('*, jobs(title, city, state, specialty), nurse_profiles(first_name, last_name), employer_profiles(org_name)')
     .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
+// GET /api/admin/jobs
+router.get('/jobs', async (req, res) => {
+  const { status } = req.query
+  let query = supabase
+    .from('jobs')
+    .select('*, employer_profiles(org_name, city, state)')
+    .order('created_at', { ascending: false })
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+// PUT /api/admin/jobs/:id/status
+router.put('/jobs/:id/status', async (req, res) => {
+  const { status } = req.body || {}
+  if (!['active', 'paused', 'filled', 'closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid job status' })
+  }
+
+  const { data, error } = await supabase
+    .from('jobs')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select('*')
+    .single()
+
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })

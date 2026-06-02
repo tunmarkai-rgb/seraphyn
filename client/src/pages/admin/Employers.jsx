@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
@@ -24,17 +23,16 @@ export default function AdminEmployers() {
 
   async function loadEmployers() {
     setLoading(true)
-    const { data } = await supabase
-      .from('employer_profiles')
-      .select(`
-        *,
-        users!inner(id, email, status, full_name, created_at),
-        contracts(*)
-      `)
-      .order('created_at', { ascending: false })
-
-    setAllEmployers(data || [])
-    setLoading(false)
+    setFeedback('')
+    try {
+      const data = await apiRequest('/api/admin/employers')
+      setAllEmployers(data || [])
+    } catch (error) {
+      setFeedback(error.message)
+      setAllEmployers([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function approve(empId) {
@@ -51,24 +49,20 @@ export default function AdminEmployers() {
     }
   }
 
-  async function reject(userId, empId) {
+  async function updateEmployerStatus(empId, status) {
     setActionLoading(empId)
-    await supabase
-      .from('users')
-      .update({ status: 'rejected', updated_at: new Date().toISOString() })
-      .eq('id', userId)
-    await loadEmployers()
-    setActionLoading(null)
-  }
-
-  async function suspend(userId, empId) {
-    setActionLoading(empId)
-    await supabase
-      .from('users')
-      .update({ status: 'suspended', updated_at: new Date().toISOString() })
-      .eq('id', userId)
-    await loadEmployers()
-    setActionLoading(null)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/employers/${empId}/status`, {
+        method: 'PUT',
+        body: { status }
+      })
+      await loadEmployers()
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   async function sendContract(empId) {
@@ -293,7 +287,7 @@ export default function AdminEmployers() {
 
                       {status !== 'rejected' && status !== 'approved' && (
                         <button
-                          onClick={() => reject(emp.users?.id, emp.id)}
+                          onClick={() => updateEmployerStatus(emp.id, 'rejected')}
                           disabled={actionLoading === emp.id}
                           style={{ padding: '8px 16px', background: 'rgba(180,60,60,0.9)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}
                         >
@@ -303,7 +297,7 @@ export default function AdminEmployers() {
 
                       {status === 'approved' && (
                         <button
-                          onClick={() => suspend(emp.users?.id, emp.id)}
+                          onClick={() => updateEmployerStatus(emp.id, 'suspended')}
                           disabled={actionLoading === emp.id}
                           style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}
                         >

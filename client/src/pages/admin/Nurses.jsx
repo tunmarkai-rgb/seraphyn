@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
@@ -32,13 +31,16 @@ export default function AdminNurses() {
 
   async function loadNurses() {
     setLoading(true)
-    const { data } = await supabase
-      .from('nurse_profiles')
-      .select('*, users!inner(id, email, status, full_name, created_at)')
-      .order('created_at', { ascending: false })
-
-    setAllNurses(data || [])
-    setLoading(false)
+    setFeedback('')
+    try {
+      const data = await apiRequest('/api/admin/nurses')
+      setAllNurses(data || [])
+    } catch (error) {
+      setFeedback(error.message)
+      setAllNurses([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadDocuments(nurseId) {
@@ -87,18 +89,20 @@ export default function AdminNurses() {
     }
   }
 
-  async function reject(userId, nurseId) {
+  async function updateNurseStatus(nurseId, status) {
     setActionLoading(nurseId)
-    await supabase.from('users').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', userId)
-    await loadNurses()
-    setActionLoading(null)
-  }
-
-  async function suspend(userId, nurseId) {
-    setActionLoading(nurseId)
-    await supabase.from('users').update({ status: 'suspended', updated_at: new Date().toISOString() }).eq('id', userId)
-    await loadNurses()
-    setActionLoading(null)
+    setFeedback('')
+    try {
+      await apiRequest(`/api/admin/nurses/${nurseId}/status`, {
+        method: 'PUT',
+        body: { status }
+      })
+      await loadNurses()
+    } catch (error) {
+      setFeedback(error.message)
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   const counts = allNurses.reduce((accumulator, nurse) => {
@@ -232,12 +236,12 @@ export default function AdminNurses() {
                         </button>
                       )}
                       {status !== 'rejected' && status !== 'approved' && (
-                        <button onClick={() => reject(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'rgba(180,60,60,0.9)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
+                        <button onClick={() => updateNurseStatus(nurse.id, 'rejected')} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'rgba(180,60,60,0.9)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
                           Reject
                         </button>
                       )}
                       {status === 'approved' && (
-                        <button onClick={() => suspend(nurse.users?.id, nurse.id)} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                        <button onClick={() => updateNurseStatus(nurse.id, 'suspended')} disabled={actionLoading === nurse.id} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
                           Suspend
                         </button>
                       )}

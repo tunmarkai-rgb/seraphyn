@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 
 export default function AdminJobs() {
@@ -8,25 +8,29 @@ export default function AdminJobs() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
 
-  useEffect(() => { loadJobs() }, [filter])
+  useEffect(() => { void loadJobs() }, [filter])
 
   async function loadJobs() {
     setLoading(true)
-    const query = supabase
-      .from('jobs')
-      .select('*, employer_profiles(org_name, city, state)')
-      .order('created_at', { ascending: false })
-    if (filter !== 'all') query.eq('status', filter)
-    const { data } = await query
-    setJobs(data || [])
-    setLoading(false)
+    try {
+      const data = await apiRequest(`/api/admin/jobs?status=${encodeURIComponent(filter)}`)
+      setJobs(data || [])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function updateStatus(jobId, status) {
     setActionLoading(jobId)
-    await supabase.from('jobs').update({ status }).eq('id', jobId)
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status } : j))
-    setActionLoading(null)
+    try {
+      const updated = await apiRequest(`/api/admin/jobs/${jobId}/status`, {
+        method: 'PUT',
+        body: { status }
+      })
+      setJobs((prev) => prev.map((job) => (job.id === jobId ? { ...job, ...updated } : job)))
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   const STATUS_COLORS = {
