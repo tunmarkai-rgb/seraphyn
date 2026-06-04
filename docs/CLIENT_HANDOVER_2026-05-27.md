@@ -260,9 +260,14 @@ Employers and admins can update application status from their respective portal 
 The portal includes messaging between parties.
 
 Current expected behavior:
+- application-specific message threads when the conversation starts from a job application
+- direct admin-to-nurse and admin-to-employer threads from admin management pages
+- direct approved employer-to-nurse threads from private nurse profile pages
 - in-app notifications for new messages
 - notification bell updates
 - email alerts for new messages
+
+This means Seraphyn can contact nurses or employers from the admin portal even when there is no application record yet, and approved employers can message nurses they are reviewing.
 
 ## 7. Notifications and Operational Triggers
 
@@ -358,6 +363,7 @@ These are the main operational constraints the Seraphyn team should understand:
 
 ### Agreement wording and field coverage
 - the agreement experience is portal-native
+- the current templates have been expanded to track the source PDF agreement wording closely
 - if the business wants additional signer fields, initials, or wording changes, those can still be refined after test review
 
 ### GHL and n8n

@@ -275,9 +275,10 @@ export default function EmployerOnboarding() {
     }
   }
 
-  async function openAgreement(agreement) {
+  function openAgreement(agreement) {
     setReviewReady(false)
-    setActiveAgreement(agreement)
+    setError('')
+    setActiveAgreement({ ...agreement })
   }
 
   function closeAgreementModal() {
@@ -320,6 +321,37 @@ export default function EmployerOnboarding() {
       [activeAgreement.documentType]: true
     }))
     closeAgreementModal()
+  }
+
+  function agreementIsComplete(documentType) {
+    const fields = agreementFields[documentType] || {}
+    const requiredFieldValues = [
+      fields.organizationName,
+      fields.organizationType,
+      fields.contactName,
+      fields.contactEmail,
+      fields.signerName,
+      fields.signerInitials,
+      fields.effectiveDate
+    ]
+    const template = AGREEMENT_TEMPLATES[documentType]
+    const allAcknowledged = (template?.acknowledgements || []).every((_, index) => fields?.acknowledgements?.includes(index))
+
+    return !requiredFieldValues.some((value) => !String(value || '').trim()) && allAcknowledged
+  }
+
+  function toggleInlineReviewed(documentType, checked) {
+    if (checked && !agreementIsComplete(documentType)) {
+      const template = AGREEMENT_TEMPLATES[documentType]
+      setError(`Complete all required fields and acknowledgements for ${template?.title || 'this agreement'} before marking it reviewed.`)
+      return
+    }
+
+    setError('')
+    setReviewedAgreements((previous) => ({
+      ...previous,
+      [documentType]: checked
+    }))
   }
 
   async function downloadContract(contractId) {
@@ -590,13 +622,18 @@ export default function EmployerOnboarding() {
                               Reviewed
                             </span>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => (signedRecord?.id ? downloadContract(signedRecord.id) : openAgreement(agreement))}
+                          <a
+                            href={signedRecord?.id ? undefined : `#agreement-${agreement.documentType}`}
+                            onClick={(event) => {
+                              if (signedRecord?.id) {
+                                event.preventDefault()
+                                downloadContract(signedRecord.id)
+                              }
+                            }}
                             style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}
                           >
                             {signedRecord?.id ? 'View Signed Copy' : 'Open Agreement'}
-                          </button>
+                          </a>
                           {signedRecord?.id && (
                             <button type="button" onClick={() => downloadContract(signedRecord.id)}
                               style={{ padding: '8px 14px', border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>
@@ -606,6 +643,124 @@ export default function EmployerOnboarding() {
                         </div>
                       </div>
                     </div>
+                  )
+                })}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', marginBottom: '28px' }}>
+                {AGREEMENT_CARDS.map((agreement) => {
+                  const template = AGREEMENT_TEMPLATES[agreement.documentType]
+                  const fields = agreementFields[agreement.documentType] || {}
+                  const reviewed = Boolean(reviewedAgreements[agreement.documentType])
+
+                  return (
+                    <section
+                      key={`inline-${agreement.documentType}`}
+                      id={`agreement-${agreement.documentType}`}
+                      style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '24px', background: 'var(--warm-white)', scrollMarginTop: '96px' }}
+                    >
+                      <p style={{ fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--warm-gold)', marginBottom: '8px' }}>
+                        Agreement Review
+                      </p>
+                      <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '30px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '6px' }}>
+                        {template.title}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '18px' }}>{template.subtitle}</p>
+                      <p style={{ fontSize: '14px', color: 'var(--deep-navy)', lineHeight: '1.8', marginBottom: '24px' }}>{template.intro}</p>
+
+                      <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                        <div>
+                          <label style={labelStyle}>Organization Name *</label>
+                          <input value={fields.organizationName || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'organizationName', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Organization Type *</label>
+                          <input value={fields.organizationType || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'organizationType', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Name *</label>
+                          <input value={fields.contactName || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'contactName', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Title</label>
+                          <input value={fields.contactTitle || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'contactTitle', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Contact Email *</label>
+                          <input value={fields.contactEmail || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'contactEmail', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Effective Date *</label>
+                          <input type="date" value={fields.effectiveDate || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'effectiveDate', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Signer Name *</label>
+                          <input value={fields.signerName || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'signerName', e.target.value)} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Signer Title</label>
+                          <input value={fields.signerTitle || ''} onChange={(e) => updateAgreementField(agreement.documentType, 'signerTitle', e.target.value)} style={inputStyle} />
+                        </div>
+                      </div>
+
+                      {template.sections.map((section) => (
+                        <div key={`${agreement.documentType}-${section.heading}`} style={{ marginBottom: '22px' }}>
+                          <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', marginBottom: '8px' }}>
+                            {section.heading}
+                          </p>
+                          {section.paragraphs.map((paragraph) => (
+                            <p key={paragraph} style={{ fontSize: '14px', color: 'var(--deep-navy)', lineHeight: '1.8', marginBottom: '12px' }}>
+                              {paragraph}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '24px' }}>
+                        <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', marginBottom: '10px' }}>
+                          Required Acknowledgements
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                          {template.acknowledgements.map((item, index) => (
+                            <label key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>
+                              <input
+                                type="checkbox"
+                                checked={(fields.acknowledgements || []).includes(index)}
+                                onChange={() => toggleAgreementAcknowledgement(agreement.documentType, index)}
+                              />
+                              {item}
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '18px' }}>
+                          <div>
+                            <label style={labelStyle}>Signer Initials *</label>
+                            <input
+                              value={fields.signerInitials || ''}
+                              onChange={(e) => updateAgreementField(agreement.documentType, 'signerInitials', e.target.value.toUpperCase().slice(0, 4))}
+                              style={inputStyle}
+                              placeholder="DR"
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Signature Preview</label>
+                            <div style={{ ...inputStyle, minHeight: '52px', display: 'flex', alignItems: 'center', fontFamily: '"Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive', fontSize: '34px' }}>
+                              {fields.signerName || signerName || 'Signer name'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>
+                          <input
+                            type="checkbox"
+                            checked={reviewed}
+                            onChange={(e) => toggleInlineReviewed(agreement.documentType, e.target.checked)}
+                          />
+                          I have read this agreement to the end, completed the required fields, and authorize it for electronic signing.
+                        </label>
+                      </div>
+                    </section>
                   )
                 })}
               </div>

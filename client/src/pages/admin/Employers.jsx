@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
@@ -256,13 +255,18 @@ export default function AdminEmployers() {
                     )}
 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {emp.latest_application?.id && (
-                        <Link
-                          to={`/messages?app=${emp.latest_application.id}`}
-                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', textDecoration: 'none' }}
+                      {emp.users?.id && (
+                        <a
+                          href={`/messages?direct=${emp.users.id}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                          }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', textDecoration: 'none', cursor: 'pointer' }}
                         >
                           Message Employer
-                        </Link>
+                        </a>
                       )}
                       {!emp.contract_signed && status !== 'approved' && (
                         <button

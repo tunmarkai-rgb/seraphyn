@@ -31,6 +31,13 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   res.json(data)
 })
 
+// GET /api/employers/self - current employer profile
+router.get('/self', requireAuth, requireRole('employer'), async (req, res) => {
+  const profile = await getEmployerProfileByUserId(req.user.id)
+  if (!profile) return res.status(404).json({ error: 'Employer profile not found' })
+  res.json(profile)
+})
+
 // GET /api/employers/:id
 router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, res) => {
   const { data, error } = await supabase

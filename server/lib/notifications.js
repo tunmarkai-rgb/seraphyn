@@ -177,7 +177,7 @@ async function notifyInternalInbox({ subject, title, body, html = '' }) {
   })
 }
 
-async function createMessageNotification({ receiverId, senderName, message, applicationId, recipientEmail }) {
+async function createMessageNotification({ receiverId, senderName, message, applicationId = null, directUserId = null, recipientEmail }) {
   const type = 'message.new'
   const title = `New message from ${senderName || 'Seraphyn'}`
   const body = message?.content?.slice(0, 160) || 'You have a new message in the Seraphyn portal.'
@@ -195,6 +195,7 @@ async function createMessageNotification({ receiverId, senderName, message, appl
       entityId,
       metadata: {
         applicationId,
+        directUserId,
         messageId: message?.id || null,
         senderName: senderName || null
       }
@@ -207,7 +208,8 @@ async function createMessageNotification({ receiverId, senderName, message, appl
   }
 
   const portalBase = process.env.CLIENT_URL || process.env.VITE_APP_URL || ''
-  const messageUrl = `${portalBase.replace(/\/+$/, '')}/messages?app=${applicationId}`
+  const messagePath = applicationId ? `/messages?app=${applicationId}` : `/messages?direct=${directUserId || message?.sender_id || ''}`
+  const messageUrl = `${portalBase.replace(/\/+$/, '')}${messagePath}`
   const emailResult = await sendPortalEmail({
     to: recipientEmail,
     subject: title,

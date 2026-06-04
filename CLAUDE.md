@@ -46,6 +46,7 @@ Two-sided healthcare staffing marketplace.
 9. Supabase Auth currently owns signup confirmation and password reset delivery; those auth emails are branded and sent through Resend SMTP, not GHL.
 10. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
 11. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
+12. Portal messaging supports both application threads and direct user-to-user threads. Direct threads store `messages.application_id = null`.
 
 ---
 
@@ -194,6 +195,7 @@ All billing is offline for M2.
   - Per Diem Staffing Agreement
 - `POST /api/employers/contracts/sign` signs both agreements in one session, stores signed PDFs in private Supabase storage, emails both signed copies to the employer, CCs `info@seraphyncare.com`, and raises internal approval notifications.
 - The employer agreement UX is now portal-native and field-driven rather than PDF-page review only; required agreement fields must be completed before both agreements can be marked reviewed and signed.
+- The rendered agreement templates now track the legal text of the source PDFs much more closely than the earlier short summaries, while preserving portal-native required fields/acknowledgements and final signed PDF output.
 - Signed documents update:
   - `contracts.status`
   - `contracts.document_type`
@@ -248,6 +250,7 @@ Current production n8n state:
   - `availability` is stored as `available`
   - legacy signup values such as `Permanent`, `Per Diem`, `Contract Travel`, `Day`, `Night`, `Evening`, and `Mixed` are normalized during bootstrap
 - Nurse profile page now exposes a direct `Go to Dashboard` CTA so mobile users are not trapped at the bottom of the form
+- Messaging now supports direct admin-to-nurse, admin-to-employer, and approved employer-to-nurse conversations even when no application thread exists yet
 - Client-facing pre-call handover is tracked in [docs/CLIENT_HANDOVER_2026-05-27.md](docs/CLIENT_HANDOVER_2026-05-27.md)
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
@@ -262,6 +265,7 @@ Current production n8n state:
 - The `contracts` table now supports one row per agreement document. Legacy GHL sends may still reuse `docuseal_submission_id` as an external reference field.
 - The seeded test employer still owns the retained sample jobs/application data used for portal verification. Cleanup did not remove those records because the test employer account was intentionally preserved.
 - Admin UI still uses a mix of Supabase-direct and API-driven actions; approval and contract actions should prefer the server routes
+- The shared `/messages` page currently uses the standard portal navbar even for admin direct-message threads; this does not block messaging, but a dedicated admin message layout remains a polish item.
 - Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides available later via `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
 - Resume parser production activation is blocked until the real `ANTHROPIC_API_KEY` is loaded into the native n8n `Seraphyn Anthropic API` credential
 

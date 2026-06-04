@@ -33,6 +33,65 @@ async function inferRoleFromProfileTables(userId, email = '') {
   return ''
 }
 
+async function resolveProfileState(userId, metadata = {}, email = '') {
+  if (!userId) return null
+
+  const normalizedEmail = String(email || metadata.email || '').toLowerCase()
+  const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
+    supabase
+      .from('nurse_profiles')
+      .select('user_id, first_name, last_name, approved_at')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('employer_profiles')
+      .select('user_id, org_name, contact_name, onboarding_stage, approved_at, contract_signed')
+      .eq('user_id', userId)
+      .maybeSingle()
+  ])
+
+  if (nurseProfile?.user_id) {
+    const fullName = [nurseProfile.first_name, nurseProfile.last_name].filter(Boolean).join(' ').trim()
+    return {
+      id: userId,
+      role: 'nurse',
+      status: nurseProfile.approved_at ? 'approved' : (metadata.status || 'pending'),
+      full_name: fullName || metadata.full_name || ''
+    }
+  }
+
+  if (employerProfile?.user_id) {
+    return {
+      id: userId,
+      role: 'employer',
+      status: employerProfile.approved_at || employerProfile.onboarding_stage === 'approved' ? 'approved' : (metadata.status || 'pending'),
+      full_name: employerProfile.contact_name || metadata.full_name || '',
+      onboarding_stage: employerProfile.onboarding_stage || metadata.onboarding_stage || 'profile',
+      contract_signed: Boolean(employerProfile.contract_signed)
+    }
+  }
+
+  if (ADMIN_EMAIL_ALLOWLIST.has(normalizedEmail)) {
+    return {
+      id: userId,
+      role: 'admin',
+      status: 'approved',
+      full_name: metadata.full_name || ''
+    }
+  }
+
+  if (metadata.role) {
+    return {
+      id: userId,
+      role: metadata.role,
+      status: metadata.status || (metadata.role === 'admin' ? 'approved' : 'pending'),
+      full_name: metadata.full_name || ''
+    }
+  }
+
+  return null
+}
+
 async function bootstrapNurseProfileFromMetadata(user) {
   if (!user?.id) return
 
@@ -176,35 +235,18 @@ export function AuthProvider({ children }) {
 
   const fetchProfile = async (userId, metadata = {}, email = '') => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single()
-      if (!error && data) {
-        setProfile(data)
+      const resolvedProfile = await resolveProfileState(userId, metadata, email)
+      if (resolvedProfile) {
+        setProfile(resolvedProfile)
         return
       }
-
-      const inferredRole = metadata.role || await inferRoleFromProfileTables(userId, email || metadata.email || '')
-      if (inferredRole) {
-        setProfile({
-          id: userId,
-          role: inferredRole,
-          status: metadata.status || 'pending',
-          full_name: metadata.full_name || ''
-        })
-        return
-      }
-
-      if (error) throw error
       setProfile(null)
     } catch (err) {
       console.error('Error fetching profile:', err.message)
       setProfile(metadata?.role ? {
         id: userId,
         role: metadata.role,
-        status: metadata.status || 'pending',
+        status: metadata.status || (metadata.role === 'admin' ? 'approved' : 'pending'),
         full_name: metadata.full_name || ''
       } : null)
     } finally {

@@ -40,6 +40,7 @@ Payments do not run through Stripe, GHL payment links, or portal checkout in M2.
    - onboarding guidance
    - Direct Hire Agreement
    - Per Diem Staffing Agreement
+   - portal-rendered legal text that tracks the source PDF agreements closely
    - explicit required agreement fields and acknowledgements
    - one shared signature panel
 4. Employer signs once through `POST /api/employers/contracts/sign`.

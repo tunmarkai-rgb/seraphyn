@@ -9,6 +9,10 @@ function resolveNotificationLink(item, role) {
     return `/messages?app=${item.metadata.applicationId}`
   }
 
+  if (item.metadata?.directUserId) {
+    return `/messages?direct=${item.metadata.directUserId}`
+  }
+
   if (item.entity_type === 'application') {
     return role === 'admin' ? '/admin/applications' : '/messages'
   }

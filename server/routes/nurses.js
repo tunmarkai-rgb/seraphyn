@@ -384,7 +384,7 @@ router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, re
 
   if (req.user.role === 'employer') {
     if (await employerHasFullAccess(req.user.id)) {
-      select = 'id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url'
+      select = 'id, user_id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url'
     }
   }
 

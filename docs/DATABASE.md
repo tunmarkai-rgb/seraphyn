@@ -127,7 +127,7 @@
 | id | uuid | PK |
 | sender_id | uuid | FK to users |
 | receiver_id | uuid | FK to users |
-| application_id | uuid | FK to applications |
+| application_id | uuid | nullable FK to applications; `null` means direct user-to-user thread |
 | content | text | |
 | read | boolean | default false |
 | created_at | timestamptz | |
@@ -211,6 +211,9 @@
 - Employer agreement completion now raises both in-app admin notifications and an internal operational email to `info@seraphyncare.com`.
 - Nurses can upload resume and license directly into `nurse_profiles` and certification proof files into `nurse_documents`.
 - Admin and approved employers access private nurse certification documents through signed server URLs, not public bucket links.
+- Messages support both application-scoped threads and direct user-to-user threads:
+  - application thread: `messages.application_id` references `applications.id`
+  - direct thread: `messages.application_id` is `null`, grouped by sender/receiver pair
 - New nurse and employer signups also create internal operational alerts for approval review.
 - Production nurse profile writes normalize the currently accepted enum-backed values to:
   - `shift_preference = any`

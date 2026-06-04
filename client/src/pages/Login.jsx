@@ -9,16 +9,6 @@ const ADMIN_EMAIL_ALLOWLIST = new Set(['kundayiw@gmail.com', 'info@seraphyncare.
 async function resolveRole(userId, fallbackRole = '', email = '') {
   if (!userId) return fallbackRole
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', userId)
-    .maybeSingle()
-
-  if (!error && data?.role) {
-    return data.role
-  }
-
   const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
     supabase.from('nurse_profiles').select('user_id').eq('user_id', userId).maybeSingle(),
     supabase.from('employer_profiles').select('user_id').eq('user_id', userId).maybeSingle()
@@ -27,10 +17,6 @@ async function resolveRole(userId, fallbackRole = '', email = '') {
   if (nurseProfile?.user_id) return 'nurse'
   if (employerProfile?.user_id) return 'employer'
   if (ADMIN_EMAIL_ALLOWLIST.has(String(email || '').toLowerCase())) return 'admin'
-
-  if (error) {
-    console.error('Failed to resolve login role:', error.message)
-  }
 
   return fallbackRole
 }

@@ -4,18 +4,10 @@ import { supabase } from '../lib/supabase'
 import { apiRequest } from '../lib/api'
 import BrandLogo from '../components/BrandLogo'
 
-async function resolveRole(userId, fallbackRole = '') {
+const ADMIN_EMAIL_ALLOWLIST = new Set(['kundayiw@gmail.com', 'info@seraphyncare.com'])
+
+async function resolveRole(userId, fallbackRole = '', email = '') {
   if (!userId) return fallbackRole
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', userId)
-    .maybeSingle()
-
-  if (!error && data?.role) {
-    return data.role
-  }
 
   const [{ data: nurseProfile }, { data: employerProfile }] = await Promise.all([
     supabase.from('nurse_profiles').select('user_id').eq('user_id', userId).maybeSingle(),
@@ -24,10 +16,7 @@ async function resolveRole(userId, fallbackRole = '') {
 
   if (nurseProfile?.user_id) return 'nurse'
   if (employerProfile?.user_id) return 'employer'
-
-  if (error) {
-    console.error('Failed to resolve confirmed user role:', error.message)
-  }
+  if (ADMIN_EMAIL_ALLOWLIST.has(String(email || '').toLowerCase())) return 'admin'
 
   return fallbackRole
 }
@@ -40,7 +29,7 @@ async function routeAuthenticatedUser(navigate) {
     return
   }
 
-  const role = await resolveRole(session.user.id, session.user.user_metadata?.role)
+  const role = await resolveRole(session.user.id, session.user.user_metadata?.role, session.user.email || '')
 
   if (role === 'nurse') {
     try {

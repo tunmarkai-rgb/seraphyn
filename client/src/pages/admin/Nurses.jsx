@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
@@ -220,13 +220,18 @@ export default function AdminNurses() {
                     )}
 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {nurse.latest_application?.id && (
-                        <Link
-                          to={`/messages?app=${nurse.latest_application.id}`}
-                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', textDecoration: 'none' }}
+                      {nurse.users?.id && (
+                        <a
+                          href={`/messages?direct=${nurse.users.id}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                          }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', textDecoration: 'none', cursor: 'pointer' }}
                         >
                           Message Nurse
-                        </Link>
+                        </a>
                       )}
                       {nurse.resume_url && (
                         <button type="button" onClick={() => downloadPrimaryFile(nurse.id, 'resume')} style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>

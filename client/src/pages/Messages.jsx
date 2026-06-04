@@ -42,13 +42,22 @@ export default function Messages() {
 
   useEffect(() => {
     const appId = searchParams.get('app')
-    if (!appId || threads.length === 0 && loading) return
-    if (selectedThread?.application_id === appId) return
+    const directUserId = searchParams.get('direct')
+    if ((!appId && !directUserId) || threads.length === 0 && loading) return
+    if (appId && selectedThread?.application_id === appId) return
+    if (directUserId && selectedThread?.direct_user_id === directUserId) return
 
-    const match = threads.find((thread) => thread.application_id === appId)
-    if (match) return
+    const match = appId
+      ? threads.find((thread) => thread.application_id === appId)
+      : threads.find((thread) => thread.direct_user_id === directUserId)
+    if (match) {
+      setSelectedThread(match)
+      if (isMobile) setActiveView('conversation')
+      return
+    }
 
-    void loadThreadContext(appId)
+    if (appId) void loadThreadContext(appId)
+    if (directUserId) void loadDirectThreadContext(directUserId)
   }, [searchParams, threads, loading, selectedThread, isMobile])
 
   useEffect(() => {
@@ -77,11 +86,30 @@ export default function Messages() {
 
   async function loadMessages(thread) {
     try {
-      const data = await apiRequest(`/api/messages/${thread.application_id}`)
+      const data = thread.thread_type === 'direct'
+        ? await apiRequest(`/api/messages/direct/${thread.direct_user_id}`)
+        : await apiRequest(`/api/messages/${thread.application_id}`)
       setMessages(data || [])
     } catch (error) {
       console.error('Failed to load messages:', error.message)
       setMessages([])
+    }
+  }
+
+  async function loadDirectThreadContext(userId) {
+    try {
+      const thread = await apiRequest(`/api/messages/thread/direct/${userId}`)
+      if (!thread) return
+      setThreads((previous) => {
+        if (previous.some((item) => item.thread_id === thread.thread_id)) {
+          return previous
+        }
+        return [thread, ...previous]
+      })
+      setSelectedThread(thread)
+      if (isMobile) setActiveView('conversation')
+    } catch (error) {
+      console.error('Failed to load direct thread context:', error.message)
     }
   }
 
@@ -104,7 +132,10 @@ export default function Messages() {
 
   async function markAsRead(thread) {
     try {
-      await apiRequest(`/api/messages/${thread.application_id}/read`, {
+      const path = thread.thread_type === 'direct'
+        ? `/api/messages/direct/${thread.direct_user_id}/read`
+        : `/api/messages/${thread.application_id}/read`
+      await apiRequest(path, {
         method: 'POST'
       })
     } catch (error) {
@@ -121,7 +152,8 @@ export default function Messages() {
       const data = await apiRequest('/api/messages', {
         method: 'POST',
         body: {
-          applicationId: selectedThread.application_id,
+          applicationId: selectedThread.thread_type === 'application' ? selectedThread.application_id : undefined,
+          directUserId: selectedThread.thread_type === 'direct' ? selectedThread.direct_user_id : undefined,
           content: newMessage.trim()
         }
       })
@@ -139,6 +171,10 @@ export default function Messages() {
   }
 
   function getThreadName(thread) {
+    if (thread.thread_type === 'direct') {
+      return thread.direct_user?.full_name || thread.direct_user?.email || 'Portal user'
+    }
+
     const app = thread.applications
     if (!app) return 'Unknown'
     return profile?.role === 'nurse'
@@ -147,6 +183,10 @@ export default function Messages() {
   }
 
   function getThreadSub(thread) {
+    if (thread.thread_type === 'direct') {
+      return thread.direct_user?.role ? `${thread.direct_user.role} conversation` : 'Direct conversation'
+    }
+
     return thread.applications?.jobs?.title || 'Job Application'
   }
 
@@ -169,9 +209,9 @@ export default function Messages() {
                 </div>
               ) : (
                 threads.map((thread) => {
-                  const active = selectedThread?.application_id === thread.application_id
+                  const active = selectedThread?.thread_id === thread.thread_id
                   return (
-                    <button key={thread.application_id} onClick={() => { setSelectedThread(thread); if (isMobile) setActiveView('conversation') }}
+                    <button key={thread.thread_id || thread.application_id || thread.direct_user_id} onClick={() => { setSelectedThread(thread); if (isMobile) setActiveView('conversation') }}
                       style={{ width: '100%', padding: '16px 20px', border: 'none', textAlign: 'left', cursor: 'pointer', background: active ? 'rgba(126,181,200,0.1)' : 'transparent', borderBottom: '1px solid var(--border)', borderLeft: active ? '3px solid var(--sky-blue)' : '3px solid transparent', transition: 'all 0.15s' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                         <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: active ? 'var(--sky-blue)' : 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '13px', fontFamily: 'Cormorant Garamond, serif', flexShrink: 0 }}>

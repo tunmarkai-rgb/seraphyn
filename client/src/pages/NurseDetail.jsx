@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import { apiRequest } from '../lib/api'
@@ -31,25 +30,23 @@ export default function NurseDetail() {
   }, [id, isFullAccess, profile])
 
   async function loadNurse() {
-    const { data } = await supabase
-      .from('nurse_profiles')
-      .select('id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at')
-      .eq('id', id)
-      .not('approved_at', 'is', null)
-      .single()
-
-    setNurse(data)
-    setLoading(false)
+    try {
+      const data = await apiRequest(`/api/nurses/${id}`)
+      setNurse(data)
+    } catch {
+      setNurse(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadEmployerProfile() {
-    const { data } = await supabase
-      .from('employer_profiles')
-      .select('onboarding_stage, approved_at')
-      .eq('user_id', user.id)
-      .single()
-
-    setEmpProfile(data)
+    try {
+      const data = await apiRequest('/api/employers/self')
+      setEmpProfile(data)
+    } catch {
+      setEmpProfile(null)
+    }
   }
 
   async function loadDocuments() {
@@ -140,6 +137,15 @@ export default function NurseDetail() {
             {isFullAccess ? `${nurse.first_name} ${nurse.last_name}` : `${nurse.first_name} ${nurse.last_name?.[0]}.`}
           </p>
           <p style={{ fontSize: '14px', color: 'rgba(245,245,240,0.7)' }}>{nurse.specialty}</p>
+          {isFullAccess && nurse.user_id && (
+            <button
+              type="button"
+              onClick={() => navigate(`/messages?direct=${nurse.user_id}`)}
+              style={{ marginTop: '18px', padding: '9px 16px', background: 'white', color: 'var(--deep-navy)', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '600', cursor: 'pointer' }}
+            >
+              Message Nurse
+            </button>
+          )}
         </div>
 
         {!isFullAccess && profile?.role === 'employer' && (
