@@ -251,6 +251,7 @@ Current production n8n state:
   - legacy signup values such as `Permanent`, `Per Diem`, `Contract Travel`, `Day`, `Night`, `Evening`, and `Mixed` are normalized during bootstrap
 - Nurse profile page now exposes a direct `Go to Dashboard` CTA so mobile users are not trapped at the bottom of the form
 - Messaging now supports direct admin-to-nurse, admin-to-employer, and approved employer-to-nurse conversations even when no application thread exists yet
+- Admin message threads render inside the admin shell; nurse/employer message threads keep the standard portal navbar
 - Client-facing pre-call handover is tracked in [docs/CLIENT_HANDOVER_2026-05-27.md](docs/CLIENT_HANDOVER_2026-05-27.md)
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
@@ -265,7 +266,6 @@ Current production n8n state:
 - The `contracts` table now supports one row per agreement document. Legacy GHL sends may still reuse `docuseal_submission_id` as an external reference field.
 - The seeded test employer still owns the retained sample jobs/application data used for portal verification. Cleanup did not remove those records because the test employer account was intentionally preserved.
 - Admin UI still uses a mix of Supabase-direct and API-driven actions; approval and contract actions should prefer the server routes
-- The shared `/messages` page currently uses the standard portal navbar even for admin direct-message threads; this does not block messaging, but a dedicated admin message layout remains a polish item.
 - Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides available later via `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
 - Resume parser production activation is blocked until the real `ANTHROPIC_API_KEY` is loaded into the native n8n `Seraphyn Anthropic API` credential
 
