@@ -1,4 +1,3 @@
-const fs = require('fs')
 const path = require('path')
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const { supabase } = require('../config/supabase')
@@ -9,14 +8,33 @@ const CONTRACT_DEFINITIONS = [
   {
     documentType: 'direct_hire',
     title: 'Direct Hire Agreement',
-    fileName: 'Seraphyn Care Direct Hire Agreement  (1).pdf'
+    fileName: 'Seraphyn Care Direct Hire Agreement  (1).pdf',
+    generatedFileBase: 'Seraphyn-Direct-Hire-Agreement'
   },
   {
     documentType: 'staffing_boss',
     title: 'Per Diem Staffing Agreement',
-    fileName: 'Seraphyn_Care_Solutions_Staffing_Agreement_BOSS.pdf'
+    fileName: 'Seraphyn_Care_Solutions_Staffing_Agreement_BOSS.pdf',
+    generatedFileBase: 'Seraphyn-Per-Diem-Staffing-Agreement'
   }
 ]
+
+const PAGE = {
+  width: 612,
+  height: 792,
+  marginX: 54,
+  top: 720,
+  bottom: 58
+}
+
+const COLORS = {
+  navy: rgb(0.17, 0.24, 0.31),
+  slate: rgb(0.34, 0.39, 0.45),
+  muted: rgb(0.48, 0.53, 0.58),
+  gold: rgb(0.74, 0.56, 0.25),
+  border: rgb(0.78, 0.81, 0.84),
+  warm: rgb(0.97, 0.96, 0.93)
+}
 
 let extendedContractsSchemaSupport = null
 
@@ -52,129 +70,381 @@ function extractBase64Payload(dataUrl = '') {
   return parts.length > 1 ? parts[1] : parts[0]
 }
 
-async function appendSignatureAuditPage({
-  pdfBytes,
-  title,
+function cleanText(value = '') {
+  return String(value || '')
+    .replace(/â€™/g, "'")
+    .replace(/â€˜/g, "'")
+    .replace(/â€œ|â€�/g, '"')
+    .replace(/â€“|â€”/g, '-')
+    .replace(/â€¢/g, '-')
+    .replace(/Â·/g, '-')
+    .replace(/Â/g, '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function sanitizeFileSegment(value = '') {
+  return cleanText(value)
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'Employer'
+}
+
+function formatDateForFile(isoString) {
+  return String(isoString || new Date().toISOString()).slice(0, 10)
+}
+
+function buildGeneratedFileName({ contract, employer, signedAt }) {
+  const org = sanitizeFileSegment(employer.org_name || employer.contact_name || 'Employer')
+  return `${contract.generatedFileBase}-${org}-${formatDateForFile(signedAt)}.pdf`
+}
+
+function buildFieldValues({ employer, signerName, signerTitle, signerEmail, fieldValues, signedAt }) {
+  return {
+    organizationName: fieldValues.organizationName || employer.org_name || '',
+    organizationType: fieldValues.organizationType || employer.org_type || '',
+    contactName: fieldValues.contactName || employer.contact_name || '',
+    contactTitle: fieldValues.contactTitle || employer.contact_title || '',
+    contactEmail: fieldValues.contactEmail || signerEmail || '',
+    signerName: fieldValues.signerName || signerName || '',
+    signerTitle: fieldValues.signerTitle || signerTitle || '',
+    signerInitials: fieldValues.signerInitials || '',
+    effectiveDate: fieldValues.effectiveDate || signedAt.slice(0, 10)
+  }
+}
+
+function wrapText(text, font, size, maxWidth) {
+  const words = cleanText(text).split(' ').filter(Boolean)
+  const lines = []
+  let line = ''
+
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      line = candidate
+      continue
+    }
+
+    if (line) lines.push(line)
+    line = word
+  }
+
+  if (line) lines.push(line)
+  return lines.length ? lines : ['']
+}
+
+function createPdfRenderer({ pdfDoc, fonts }) {
+  const pages = []
+  let page = null
+  let y = PAGE.top
+
+  function drawHeader(targetPage) {
+    targetPage.drawText('Seraphyn', {
+      x: PAGE.marginX,
+      y: 754,
+      size: 18,
+      font: fonts.bold,
+      color: COLORS.navy
+    })
+    targetPage.drawText('HEALTHCARE STAFFING', {
+      x: PAGE.marginX,
+      y: 740,
+      size: 8,
+      font: fonts.regular,
+      color: COLORS.gold
+    })
+    targetPage.drawLine({
+      start: { x: PAGE.marginX, y: 726 },
+      end: { x: PAGE.width - PAGE.marginX, y: 726 },
+      thickness: 0.8,
+      color: COLORS.border
+    })
+  }
+
+  function addPage() {
+    page = pdfDoc.addPage([PAGE.width, PAGE.height])
+    pages.push(page)
+    y = PAGE.top
+    drawHeader(page)
+  }
+
+  function ensureSpace(requiredHeight) {
+    if (!page || y - requiredHeight < PAGE.bottom) {
+      addPage()
+    }
+  }
+
+  function drawTextBlock(text, options = {}) {
+    const {
+      size = 10,
+      font = fonts.regular,
+      color = COLORS.slate,
+      lineHeight = size + 5,
+      gapAfter = 8,
+      x = PAGE.marginX,
+      maxWidth = PAGE.width - PAGE.marginX * 2
+    } = options
+
+    const lines = wrapText(text, font, size, maxWidth)
+    for (const line of lines) {
+      ensureSpace(lineHeight)
+      page.drawText(line, { x, y, size, font, color })
+      y -= lineHeight
+    }
+    y -= gapAfter
+  }
+
+  function drawHeading(text) {
+    ensureSpace(28)
+    y -= 6
+    page.drawText(cleanText(text), {
+      x: PAGE.marginX,
+      y,
+      size: 12,
+      font: fonts.bold,
+      color: COLORS.navy
+    })
+    y -= 16
+    page.drawLine({
+      start: { x: PAGE.marginX, y },
+      end: { x: PAGE.width - PAGE.marginX, y },
+      thickness: 0.6,
+      color: COLORS.border
+    })
+    y -= 12
+  }
+
+  function drawKeyValue(label, value, x, valueX, rowY, width = 170) {
+    page.drawText(cleanText(label).toUpperCase(), {
+      x,
+      y: rowY + 12,
+      size: 7,
+      font: fonts.bold,
+      color: COLORS.muted
+    })
+    const lines = wrapText(value || '-', fonts.regular, 9, width)
+    page.drawText(lines[0] || '-', {
+      x: valueX,
+      y: rowY,
+      size: 9,
+      font: fonts.regular,
+      color: COLORS.navy
+    })
+  }
+
+  function drawInfoBox(title, rows) {
+    const rowHeight = 34
+    const boxHeight = 34 + Math.ceil(rows.length / 2) * rowHeight
+    ensureSpace(boxHeight + 16)
+
+    page.drawRectangle({
+      x: PAGE.marginX,
+      y: y - boxHeight + 8,
+      width: PAGE.width - PAGE.marginX * 2,
+      height: boxHeight,
+      color: COLORS.warm,
+      borderColor: COLORS.border,
+      borderWidth: 0.6
+    })
+
+    page.drawText(cleanText(title), {
+      x: PAGE.marginX + 14,
+      y: y - 12,
+      size: 12,
+      font: fonts.bold,
+      color: COLORS.navy
+    })
+
+    let rowY = y - 44
+    rows.forEach((row, index) => {
+      const left = index % 2 === 0
+      if (index > 0 && left) rowY -= rowHeight
+      const labelX = left ? PAGE.marginX + 14 : PAGE.marginX + 270
+      const valueX = labelX
+      drawKeyValue(row.label, row.value, labelX, valueX, rowY, 210)
+    })
+
+    y -= boxHeight + 12
+  }
+
+  function drawSignatureImage(signatureImage) {
+    ensureSpace(120)
+    const scaled = signatureImage.scale(0.22)
+    page.drawImage(signatureImage, {
+      x: PAGE.marginX,
+      y: y - 78,
+      width: Math.min(scaled.width, 240),
+      height: Math.min(scaled.height, 62)
+    })
+    y -= 86
+    page.drawLine({
+      start: { x: PAGE.marginX, y },
+      end: { x: PAGE.marginX + 240, y },
+      thickness: 0.7,
+      color: COLORS.border
+    })
+    y -= 12
+  }
+
+  function drawFooterNumbers() {
+    pages.forEach((targetPage, index) => {
+      targetPage.drawLine({
+        start: { x: PAGE.marginX, y: 42 },
+        end: { x: PAGE.width - PAGE.marginX, y: 42 },
+        thickness: 0.5,
+        color: COLORS.border
+      })
+      targetPage.drawText(`Page ${index + 1} of ${pages.length}`, {
+        x: PAGE.width - PAGE.marginX - 70,
+        y: 26,
+        size: 8,
+        font: fonts.regular,
+        color: COLORS.muted
+      })
+      targetPage.drawText('Generated by the Seraphyn portal', {
+        x: PAGE.marginX,
+        y: 26,
+        size: 8,
+        font: fonts.regular,
+        color: COLORS.muted
+      })
+    })
+  }
+
+  addPage()
+
+  return {
+    drawTextBlock,
+    drawHeading,
+    drawInfoBox,
+    drawSignatureImage,
+    drawFooterNumbers,
+    ensureSpace,
+    get page() {
+      return page
+    },
+    get y() {
+      return y
+    },
+    set y(value) {
+      y = value
+    }
+  }
+}
+
+async function generateSignedAgreementPdf({
+  contract,
+  template,
   employer,
   signerName,
   signerTitle,
   signerEmail,
   signatureDataUrl,
-  agreementFieldValues = {},
+  agreementFieldValues,
+  acknowledgementIndexes,
   signedAt,
   ipAddress,
   userAgent
 }) {
-  const pdfDoc = await PDFDocument.load(pdfBytes)
-  const page = pdfDoc.addPage([612, 792])
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const pdfDoc = await PDFDocument.create()
+  const fonts = {
+    regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+    italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+  }
   const signatureImage = await pdfDoc.embedPng(Buffer.from(extractBase64Payload(signatureDataUrl), 'base64'))
-  const signatureDims = signatureImage.scale(0.4)
-  let y = 744
+  const renderer = createPdfRenderer({ pdfDoc, fonts })
+  const maxWidth = PAGE.width - PAGE.marginX * 2
 
-  page.drawText(title, {
-    x: 48,
-    y,
-    size: 20,
-    font: boldFont,
-    color: rgb(0.17, 0.24, 0.31)
+  renderer.drawTextBlock(template.title || contract.title, {
+    size: 22,
+    font: fonts.bold,
+    color: COLORS.navy,
+    lineHeight: 27,
+    gapAfter: 4
   })
-  y -= 34
 
-  const lines = [
-    `Organization: ${employer.org_name || ''}`,
-    `Signer Name: ${signerName}`,
-    `Signer Title: ${signerTitle || 'Not provided'}`,
-    `Signer Email: ${signerEmail}`,
-    `Signed At (UTC): ${signedAt}`,
-    `IP Address: ${ipAddress || 'Unavailable'}`,
-    `User Agent: ${userAgent || 'Unavailable'}`
-  ]
-
-  for (const line of lines) {
-    page.drawText(line, {
-      x: 48,
-      y,
+  if (template.subtitle) {
+    renderer.drawTextBlock(template.subtitle, {
       size: 11,
-      font,
-      color: rgb(0.22, 0.29, 0.35)
+      font: fonts.bold,
+      color: COLORS.gold,
+      lineHeight: 15,
+      gapAfter: 12
     })
-    y -= 22
   }
 
-  const fieldEntries = Object.entries(agreementFieldValues || {}).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
-  if (fieldEntries.length > 0) {
-    y -= 8
-    page.drawText('Agreement Field Values', {
-      x: 48,
-      y,
-      size: 13,
-      font: boldFont,
-      color: rgb(0.17, 0.24, 0.31)
-    })
-    y -= 22
+  renderer.drawTextBlock(template.intro || '', {
+    size: 10,
+    color: COLORS.slate,
+    lineHeight: 15,
+    gapAfter: 14
+  })
 
-    for (const [key, value] of fieldEntries) {
-      page.drawText(`${key}: ${String(value)}`, {
-        x: 48,
-        y,
-        size: 10,
-        font,
-        color: rgb(0.22, 0.29, 0.35),
-        maxWidth: 516,
-        lineHeight: 14
+  renderer.drawInfoBox('Client and Signing Information', [
+    { label: 'Organization', value: agreementFieldValues.organizationName },
+    { label: 'Organization Type', value: agreementFieldValues.organizationType },
+    { label: 'Contact Name', value: agreementFieldValues.contactName },
+    { label: 'Contact Title', value: agreementFieldValues.contactTitle },
+    { label: 'Contact Email', value: agreementFieldValues.contactEmail },
+    { label: 'Effective Date', value: agreementFieldValues.effectiveDate },
+    { label: 'Signer Name', value: agreementFieldValues.signerName || signerName },
+    { label: 'Signer Title', value: agreementFieldValues.signerTitle || signerTitle }
+  ])
+
+  for (const section of template.sections || []) {
+    renderer.drawHeading(section.heading)
+    for (const paragraph of section.paragraphs || []) {
+      renderer.drawTextBlock(paragraph, {
+        size: 9.2,
+        lineHeight: 13.5,
+        gapAfter: 7,
+        maxWidth
       })
-      y -= 16
-      if (y < 120) break
     }
   }
 
-  y -= 8
-  page.drawText('Electronic Signature', {
-    x: 48,
-    y,
-    size: 13,
-    font: boldFont,
-    color: rgb(0.17, 0.24, 0.31)
-  })
-  y -= 100
-
-  page.drawImage(signatureImage, {
-    x: 48,
-    y,
-    width: Math.min(signatureDims.width, 240),
-    height: Math.min(signatureDims.height, 80)
+  renderer.drawHeading('Acknowledgements')
+  ;(template.acknowledgements || []).forEach((acknowledgement, index) => {
+    const checked = acknowledgementIndexes.includes(index) ? '[x]' : '[ ]'
+    renderer.drawTextBlock(`${checked} ${acknowledgement}`, {
+      size: 9.5,
+      lineHeight: 14,
+      gapAfter: 6
+    })
   })
 
-  y -= 28
-  page.drawLine({
-    start: { x: 48, y },
-    end: { x: 288, y },
-    thickness: 1,
-    color: rgb(0.7, 0.75, 0.8)
-  })
-  y -= 18
-
-  page.drawText(
-    'This agreement was executed electronically inside the Seraphyn portal. The attached signature image and audit data form the electronic execution record.',
-    {
-      x: 48,
-      y,
-      size: 10,
-      font,
-      color: rgb(0.38, 0.43, 0.48),
-      maxWidth: 516,
-      lineHeight: 14
-    }
+  renderer.drawHeading('Electronic Execution')
+  renderer.drawTextBlock(
+    'By signing below, the signer confirms that they are authorized to execute this agreement electronically on behalf of the Client and that the completed fields and acknowledgements above are true and accepted.',
+    { size: 9.5, lineHeight: 14, gapAfter: 10 }
   )
 
+  renderer.drawSignatureImage(signatureImage)
+  renderer.drawInfoBox('Execution Record', [
+    { label: 'Signature', value: agreementFieldValues.signerName || signerName },
+    { label: 'Title', value: agreementFieldValues.signerTitle || signerTitle || 'Not provided' },
+    { label: 'Initials', value: agreementFieldValues.signerInitials },
+    { label: 'Signed At UTC', value: signedAt },
+    { label: 'Signer Email', value: signerEmail },
+    { label: 'IP Address', value: ipAddress || 'Unavailable' },
+    { label: 'User Agent', value: userAgent || 'Unavailable' }
+  ])
+
+  renderer.drawTextBlock(
+    'This PDF was generated from the completed portal agreement shown to the signer in Seraphyn. It is not an appended signature page on a blank source form.',
+    { size: 8.5, font: fonts.italic, color: COLORS.muted, lineHeight: 12, gapAfter: 0 }
+  )
+
+  renderer.drawFooterNumbers()
   return pdfDoc.save()
 }
 
-async function uploadSignedContract({ employerId, documentType, fileName, bytes }) {
+async function uploadSignedContract({ employerId, documentType, generatedFileName, bytes }) {
   const timestamp = Date.now()
-  const storagePath = `${employerId}/${documentType}-${timestamp}.pdf`
+  const safeName = sanitizeFileSegment(String(generatedFileName || '').replace(/\.pdf$/i, ''))
+  const storagePath = `${employerId}/${documentType}-${timestamp}-${safeName}.pdf`
   const { error } = await supabase
     .storage
     .from('contracts')
@@ -266,39 +536,42 @@ async function signEmployerContracts({
   for (const contract of CONTRACT_DEFINITIONS) {
     const fieldValues = agreementFields?.[contract.documentType] || {}
     const template = AGREEMENT_TEMPLATES[contract.documentType]
-    const sourceBytes = fs.readFileSync(getContractSourcePath(contract.fileName))
-    const signedBytes = await appendSignatureAuditPage({
-      pdfBytes: sourceBytes,
-      title: contract.title,
+    if (!template) {
+      throw new Error(`Missing agreement template for ${contract.documentType}`)
+    }
+
+    const agreementFieldValues = buildFieldValues({
+      employer,
+      signerName,
+      signerTitle,
+      signerEmail,
+      fieldValues,
+      signedAt
+    })
+    const acknowledgementIndexes = Array.isArray(fieldValues.acknowledgements)
+      ? fieldValues.acknowledgements
+      : []
+
+    const signedBytes = await generateSignedAgreementPdf({
+      contract,
+      template,
       employer,
       signerName,
       signerTitle,
       signerEmail,
       signatureDataUrl,
-      agreementFieldValues: {
-        organizationName: fieldValues.organizationName || employer.org_name || '',
-        organizationType: fieldValues.organizationType || employer.org_type || '',
-        contactName: fieldValues.contactName || employer.contact_name || '',
-        contactTitle: fieldValues.contactTitle || employer.contact_title || '',
-        contactEmail: fieldValues.contactEmail || signerEmail || '',
-        signerName: fieldValues.signerName || signerName,
-        signerTitle: fieldValues.signerTitle || signerTitle || '',
-        signerInitials: fieldValues.signerInitials || '',
-        effectiveDate: fieldValues.effectiveDate || signedAt.slice(0, 10),
-        acknowledgements: Array.isArray(fieldValues.acknowledgements)
-          ? fieldValues.acknowledgements.join(', ')
-          : '',
-        agreementTitle: template?.title || contract.title
-      },
+      agreementFieldValues,
+      acknowledgementIndexes,
       signedAt,
       ipAddress,
       userAgent
     })
+    const generatedFileName = buildGeneratedFileName({ contract, employer, signedAt })
 
     const storagePath = await uploadSignedContract({
       employerId: employer.id,
       documentType: contract.documentType,
-      fileName: contract.fileName,
+      generatedFileName,
       bytes: Buffer.from(signedBytes)
     })
 
@@ -306,6 +579,8 @@ async function signEmployerContracts({
       signedAt,
       ipAddress: ipAddress || null,
       userAgent: userAgent || null,
+      generatedFrom: 'portal-template',
+      generatedFileName,
       agreementFields: fieldValues
     }
 
@@ -313,7 +588,7 @@ async function signEmployerContracts({
       employerId: employer.id,
       documentType: contract.documentType,
       title: contract.title,
-      sourceFileName: contract.fileName,
+      sourceFileName: getPortalTemplateUrl(contract.documentType),
       signedStoragePath: storagePath,
       signedAt,
       signerName,
@@ -324,6 +599,7 @@ async function signEmployerContracts({
 
     results.push({
       ...contract,
+      generatedFileName,
       storagePath,
       record,
       signedBytes: Buffer.from(signedBytes)
@@ -358,7 +634,7 @@ async function getContractDownloadUrl(storagePath) {
 
 async function sendSignedContractEmail({ employerEmail, ccEmail, employerName, contracts }) {
   const attachments = contracts.map((contract) => ({
-    filename: `${contract.title}.pdf`,
+    filename: contract.generatedFileName || `${contract.title}.pdf`,
     content: contract.signedBytes.toString('base64')
   }))
 
