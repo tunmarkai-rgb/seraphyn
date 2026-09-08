@@ -260,8 +260,12 @@ export default function PostJob() {
                   </div>
                 </div>
                 <div>
-                  <label style={labelStyle}>Hourly Rate ($/hr)</label>
-                  <input name="hourly_rate" type="number" min="0" step="0.01" value={shiftForm.hourly_rate} onChange={handleShift} style={inputStyle} placeholder="e.g. 65.00" />
+                  <label style={labelStyle}>Bill Rate You&rsquo;ll Pay ($/hr)</label>
+                  <input name="hourly_rate" type="number" min="0" step="0.01" value={shiftForm.hourly_rate} onChange={handleShift} style={inputStyle} placeholder="e.g. 85.00" />
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
+                    Your all-in hourly cost. Seraphyn handles nurse compensation
+                    separately, so this is not what the nurse is paid.
+                  </p>
                 </div>
                 <div>
                   <label style={labelStyle}>Notes</label>

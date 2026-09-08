@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
+import { formatHourly } from '../../lib/format'
 
 const STATUS_COLORS = {
   open:       { label: 'Open',       bg: 'rgba(45,122,79,0.1)',    color: 'var(--success)' },
@@ -14,8 +15,43 @@ export default function AdminShifts() {
   const [filter, setFilter] = useState('open')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
+  const [nurseOptions, setNurseOptions] = useState([])
+  const [payDrafts, setPayDrafts] = useState({})
+  const [warning, setWarning] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => { void loadShifts() }, [filter])
+  useEffect(() => { void loadNurseOptions() }, [])
+
+  async function loadNurseOptions() {
+    try {
+      setNurseOptions(await apiRequest('/api/admin/shifts/nurse-options') || [])
+    } catch (loadError) {
+      console.error('Failed to load nurse options:', loadError.message)
+    }
+  }
+
+  function applyUpdate(updated) {
+    setShifts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+    setWarning(updated.rate_warning || '')
+    setPayDrafts((prev) => {
+      const next = { ...prev }
+      delete next[updated.id]
+      return next
+    })
+  }
+
+  async function patchShift(shiftId, body) {
+    setActionLoading(shiftId)
+    setError('')
+    try {
+      applyUpdate(await apiRequest(`/api/admin/shifts/${shiftId}`, { method: 'PUT', body }))
+    } catch (patchError) {
+      setError(patchError.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   async function loadShifts() {
     setLoading(true)
@@ -24,26 +60,29 @@ export default function AdminShifts() {
     setLoading(false)
   }
 
+  // Both go through patchShift so a margin warning surfaces on any edit, and
+  // so a failed write reports instead of silently doing nothing.
   async function updateStatus(shiftId, status) {
-    setActionLoading(shiftId)
-    const updated = await apiRequest(`/api/admin/shifts/${shiftId}`, {
-      method: 'PUT',
-      body: { status }
-    })
-    setShifts(prev => prev.map(s => s.id === shiftId ? updated : s))
-    setActionLoading(null)
+    await patchShift(shiftId, { status })
   }
 
   async function updateAdminNote(shiftId, note) {
-    const updated = await apiRequest(`/api/admin/shifts/${shiftId}`, {
-      method: 'PUT',
-      body: { admin_notes: note }
-    })
-    setShifts(prev => prev.map(s => s.id === shiftId ? updated : s))
+    await patchShift(shiftId, { admin_notes: note })
   }
 
   return (
     <AdminLayout title="Per Diem Shifts">
+      {error && (
+        <div style={{ padding: '12px 16px', background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.3)', borderRadius: '2px', fontSize: '13px', color: '#B43C3C', marginBottom: '16px' }}>
+          {error}
+        </div>
+      )}
+      {warning && (
+        <div style={{ padding: '12px 16px', background: 'rgba(201,169,110,0.15)', border: '1px solid var(--warm-gold)', borderRadius: '2px', fontSize: '13px', color: 'var(--deep-navy)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+          <span>{warning}</span>
+          <button type="button" onClick={() => setWarning('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px' }}>dismiss</button>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '24px' }}>
         {[['all','All'],['open','Open'],['filled','Filled'],['completed','Completed'],['cancelled','Cancelled']].map(([val, label]) => (
           <button key={val} onClick={() => setFilter(val)}
@@ -73,7 +112,6 @@ export default function AdminShifts() {
                     </h3>
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       📅 {date} · {shift.start_time} – {shift.end_time}
-                      {shift.hourly_rate && ` · $${shift.hourly_rate}/hr`}
                     </p>
                     {shift.nurse_profiles && (
                       <p style={{ fontSize: '12px', color: 'var(--success)', marginTop: '4px' }}>
@@ -83,6 +121,85 @@ export default function AdminShifts() {
                   </div>
                   <span style={{ padding: '4px 10px', borderRadius: '2px', fontSize: '10px', fontWeight: '500', background: s.bg, color: s.color }}>{s.label}</span>
                 </div>
+
+                {/* Rate panel. hourly_rate is the employer's BILL rate; nurse pay
+                    is admin-set and snapshotted so a later rate change cannot
+                    re-price a shift that has already been booked. */}
+                {(() => {
+                  const draft = payDrafts[shift.id]
+                  const payValue = draft !== undefined
+                    ? draft
+                    : (shift.nurse_pay_rate != null ? String(shift.nurse_pay_rate) : '')
+                  const pay = payValue === '' ? null : Number(payValue)
+                  const bill = shift.hourly_rate != null ? Number(shift.hourly_rate) : null
+                  const margin = pay != null && bill != null ? Math.round((bill - pay) * 100) / 100 : null
+                  const marginPct = margin != null && pay ? Math.round((margin / pay) * 100) : null
+                  const belowCost = margin != null && margin <= 0
+                  const thin = margin != null && !belowCost && marginPct != null && marginPct < 15
+
+                  return (
+                    <div style={{ padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', marginBottom: '12px' }}>
+                      <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', fontWeight: '600', marginBottom: '12px' }}>
+                        Rate &middot; Admin Only
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '12px' }}>
+                        <div>
+                          <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Nurse Pay</p>
+                          <input
+                            type="number" min="0" step="0.50" value={payValue}
+                            onChange={(e) => setPayDrafts((prev) => ({ ...prev, [shift.id]: e.target.value }))}
+                            onBlur={() => {
+                              if (draft === undefined) return
+                              patchShift(shift.id, { nurse_pay_rate: draft === '' ? null : Number(draft) })
+                            }}
+                            placeholder="not set"
+                            style={{ width: '100%', padding: '7px 9px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '13px', outline: 'none', fontFamily: 'DM Sans', color: 'var(--deep-navy)', background: 'white' }}
+                          />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Markup At Booking</p>
+                          <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: '500', color: 'var(--deep-navy)' }}>
+                            {shift.markup_pct_snapshot != null ? `${shift.markup_pct_snapshot}%` : '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Bill Rate (Employer Pays)</p>
+                          <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: '500', color: 'var(--deep-navy)' }}>
+                            {formatHourly(bill, { empty: '—' })}
+                          </p>
+                          {margin != null && (
+                            <p style={{ fontSize: '10px', marginTop: '2px', fontWeight: belowCost ? '600' : '400', color: belowCost ? '#B43C3C' : thin ? 'var(--warm-gold)' : 'var(--success)' }}>
+                              {belowCost
+                                ? `⚠ Below cost (${formatHourly(margin)})`
+                                : `margin ${formatHourly(margin)}${marginPct != null ? ` (${marginPct}%)` : ''}`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Assigned Nurse</p>
+                        <select
+                          value={shift.nurse_id || ''}
+                          onChange={(e) => patchShift(shift.id, { nurse_id: e.target.value || null })}
+                          style={{ width: '100%', maxWidth: '380px', padding: '7px 9px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '13px', outline: 'none', fontFamily: 'DM Sans', color: 'var(--deep-navy)', background: 'white' }}
+                        >
+                          <option value="">Unassigned</option>
+                          {nurseOptions.map((n) => (
+                            <option key={n.id} value={n.id}>
+                              {n.first_name} {n.last_name}
+                              {n.specialty ? ` — ${n.specialty}` : ''}
+                              {n.current_rate != null ? ` (${formatHourly(n.current_rate)})` : ' (no rate set)'}
+                            </option>
+                          ))}
+                        </select>
+                        <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                          Assigning a nurse prefills their pay from their current rate and snapshots it onto this shift.
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {shift.notes && (
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', fontStyle: 'italic' }}>"{shift.notes}"</p>

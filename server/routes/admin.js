@@ -13,6 +13,8 @@ const {
   validateBillingSettings,
   validateHourlyRate,
   adminRateShape,
+  effectiveNurseRate,
+  resolveMarkupPct,
   loadRateRow,
   loadRateRows
 } = require('../lib/rates')
@@ -674,20 +676,123 @@ router.get('/shifts', async (req, res) => {
 })
 
 // PUT /api/admin/shifts/:id
+// hourly_rate is the employer's bill rate and is NOT editable here -- the
+// employer set it when posting the shift. Admin controls nurse pay and
+// assignment.
+const SHIFT_UPDATABLE_FIELDS = [
+  'status', 'admin_notes', 'nurse_id', 'nurse_pay_rate', 'markup_pct_snapshot'
+]
+
 router.put('/shifts/:id', async (req, res) => {
-  const updates = { updated_at: new Date().toISOString() }
-  if (req.body?.status !== undefined) updates.status = req.body.status
-  if (req.body?.admin_notes !== undefined) updates.admin_notes = req.body.admin_notes
+  try {
+    const { data: shift } = await supabase
+      .from('per_diem_shifts')
+      .select('id, hourly_rate, nurse_id, nurse_pay_rate')
+      .eq('id', req.params.id)
+      .maybeSingle()
 
-  const { data, error } = await supabase
-    .from('per_diem_shifts')
-    .update(updates)
-    .eq('id', req.params.id)
-    .select('*, employer_profiles(org_name, city, state), nurse_profiles(first_name, last_name)')
-    .single()
+    if (!shift) return res.status(404).json({ error: 'Shift not found' })
 
-  if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+    const body = req.body || {}
+    const updates = { updated_at: new Date().toISOString() }
+
+    for (const field of SHIFT_UPDATABLE_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(body, field)) continue
+
+      if (field === 'nurse_pay_rate' || field === 'markup_pct_snapshot') {
+        const raw = body[field]
+        if (raw === null || raw === undefined || raw === '') {
+          updates[field] = null
+        } else {
+          const num = Number(raw)
+          if (!Number.isFinite(num) || num <= 0) {
+            return res.status(400).json({ error: `${field} must be greater than zero` })
+          }
+          updates[field] = Math.round(num * 100) / 100
+        }
+      } else {
+        updates[field] = body[field]
+      }
+    }
+
+    // Assigning a nurse prefills their pay from their current rate, snapshotting
+    // it onto the shift so a later rate change cannot re-price this booking.
+    const assigningNurse = updates.nurse_id && updates.nurse_id !== shift.nurse_id
+    if (assigningNurse && updates.nurse_pay_rate === undefined) {
+      try {
+        const settings = await getBillingSettings()
+        const rateRow = await loadRateRow(updates.nurse_id)
+        const nurseRate = effectiveNurseRate(rateRow)
+        if (nurseRate !== null) {
+          updates.nurse_pay_rate = nurseRate
+          updates.markup_pct_snapshot = resolveMarkupPct(rateRow, settings)
+        }
+      } catch (rateError) {
+        console.error('Could not prefill nurse pay for shift:', rateError.message)
+      }
+    }
+
+    if (Object.keys(updates).length === 1) {
+      return res.status(400).json({ error: 'Nothing to update' })
+    }
+
+    const { data, error } = await supabase
+      .from('per_diem_shifts')
+      .update(updates)
+      .eq('id', req.params.id)
+      .select('*, employer_profiles(org_name, city, state), nurse_profiles(first_name, last_name)')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    // Thin or negative margin is a deliberate business call sometimes, so warn
+    // rather than refuse -- but make it impossible to miss.
+    const billRate = Number(data.hourly_rate)
+    const payRate = Number(data.nurse_pay_rate)
+    let rateWarning = null
+    if (Number.isFinite(billRate) && Number.isFinite(payRate) && payRate > 0) {
+      if (payRate >= billRate) {
+        rateWarning = `Nurse pay ${payRate} is at or above the ${billRate} bill rate — this shift loses money.`
+      } else if (billRate < payRate * 1.15) {
+        rateWarning = `Margin is under 15% on this shift.`
+      }
+    }
+
+    res.json({ ...data, rate_warning: rateWarning })
+  } catch (error) {
+    console.error('Shift update failed:', error.message)
+    res.status(500).json({ error: 'Failed to update the shift' })
+  }
+})
+
+// GET /api/admin/shifts/nurse-options — approved nurses for the assignment
+// picker, with their current rate so admin can see cost before assigning.
+router.get('/shifts/nurse-options', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('nurse_profiles')
+      .select('id, first_name, last_name, specialty')
+      .not('approved_at', 'is', null)
+      .order('first_name', { ascending: true })
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    const nurses = data || []
+    try {
+      const settings = await getBillingSettings()
+      const rateRows = await loadRateRows(nurses.map((n) => n.id))
+      return res.json(nurses.map((n) => ({
+        ...n,
+        current_rate: effectiveNurseRate(rateRows.get(n.id) || null),
+        markup_pct: resolveMarkupPct(rateRows.get(n.id) || null, settings)
+      })))
+    } catch (rateError) {
+      console.error('Could not attach rates to nurse options:', rateError.message)
+      return res.json(nurses)
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load nurse options' })
+  }
 })
 
 // GET /api/admin/jobs

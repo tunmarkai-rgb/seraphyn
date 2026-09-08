@@ -274,6 +274,11 @@ Current production n8n state:
   - employers see only coarse labels so they cannot tell whether the nurse has been asked yet
   - lives in `nurse_requests`, not `applications` (no job, and rate columns would leak both ways)
   - `server/lib/employer-access.js` now holds the single definition of employer full access, replacing four inline copies
+- Per-diem shift rate reconciliation:
+  - `per_diem_shifts.hourly_rate` is now explicitly the **bill rate the employer pays**, relabelled in the employer shift form
+  - `nurse_pay_rate` and `markup_pct_snapshot` are admin-set and snapshotted at booking, never recomputed
+  - admin shift cards show nurse pay / markup / bill rate with a live margin, and warn on a thin or below-cost shift
+  - assigning a nurse prefills their pay from their current rate; the admin shift PUT allowlist now covers `nurse_id`, `nurse_pay_rate` and `markup_pct_snapshot`
 
 ---
 
@@ -300,3 +305,4 @@ Current production n8n state:
 | [docs/N8N.md](docs/N8N.md) | M2 automation bundle and integration design |
 | [docs/NURSE_RATES.sql](docs/NURSE_RATES.sql) | Nurse rate + agency markup schema (hand-apply in Supabase) |
 | [docs/NURSE_REQUESTS.sql](docs/NURSE_REQUESTS.sql) | Employer-initiated nurse request schema (hand-apply in Supabase) |
+| [docs/PER_DIEM_SHIFT_RATES.sql](docs/PER_DIEM_SHIFT_RATES.sql) | Per-diem shift nurse pay + markup snapshot columns (hand-apply in Supabase) |

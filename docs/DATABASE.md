@@ -200,7 +200,9 @@
 | specialty | text | |
 | shift_date | date | |
 | start_time / end_time | time | |
-| hourly_rate | numeric | the bill rate the employer pays, employer-entered |
+| hourly_rate | numeric | **BILL RATE the employer pays**, employer-entered. Not the nurse's pay |
+| nurse_pay_rate | numeric(8,2) | **CONFIDENTIAL.** What the nurse is paid, snapshotted at booking |
+| markup_pct_snapshot | numeric(6,2) | **CONFIDENTIAL.** Markup in force when the shift was priced |
 | notes / admin_notes | text | |
 | status | text | `open` \| `filled` \| `completed` \| `cancelled` |
 | updated_at | timestamptz | |
@@ -287,6 +289,12 @@ Append-only transition log: `request_id`, `actor_role`
 ---
 
 ## Operational Notes
+
+**Shift rates are snapshots, not live lookups.** `per_diem_shifts.nurse_pay_rate`
+and `markup_pct_snapshot` are written when a nurse is assigned and are never
+recomputed. `nurse_rates` holds the nurse's *current* rate, so pricing an
+already-worked shift from it would silently re-price history after any rate
+change. The same applies to `nurse_requests.quoted_bill_rate`.
 
 **Nurse requests are admin-brokered.** A nurse sees nothing until an admin sets
 `offered_nurse_rate` and presents the request; after that the nurse accepts or
