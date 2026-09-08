@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole, requireApproved } = require('../middleware/auth')
+const { requireFullAccessEmployer } = require('../lib/employer-access')
 
 // GET /api/jobs — public
 router.get('/', async (req, res) => {
@@ -37,10 +38,9 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/jobs — approved employer only
 router.post('/', requireAuth, requireRole('employer'), requireApproved, async (req, res) => {
-  const { data: ep } = await supabase.from('employer_profiles').select('id, onboarding_stage, approved_at').eq('user_id', req.user.id).single()
-  if (!ep || ep.onboarding_stage !== 'approved' || !ep.approved_at) {
-    return res.status(403).json({ error: 'Complete onboarding before posting jobs' })
-  }
+  const gate = await requireFullAccessEmployer(req.user.id, 'post jobs')
+  if (gate.error) return res.status(gate.status).json({ error: gate.error })
+  const ep = gate.profile
 
   const { title, specialty, city, state, shift_type, pay_rate, contract_length, description, requirements } = req.body
   if (!title || !specialty || !city || !state) {

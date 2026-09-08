@@ -37,6 +37,9 @@ const AdminApplications = lazy(() => import('./pages/admin/Applications'))
 const AdminPayments = lazy(() => import('./pages/admin/Payments'))
 const AdminShifts = lazy(() => import('./pages/admin/Shifts'))
 const AdminSettings = lazy(() => import('./pages/admin/Settings'))
+const AdminRequests = lazy(() => import('./pages/admin/Requests'))
+const EmployerRequests = lazy(() => import('./pages/employer/Requests'))
+const NurseRequests = lazy(() => import('./pages/nurse/Requests'))
 
 function RouteFallback() {
   return (
@@ -225,6 +228,30 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/requests"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminRequests />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/employer/requests"
+            element={
+              <ProtectedRoute allowedRoles={['employer']}>
+                <EmployerRequests />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/nurse/requests"
+            element={
+              <ProtectedRoute allowedRoles={['nurse']}>
+                <NurseRequests />
               </ProtectedRoute>
             }
           />

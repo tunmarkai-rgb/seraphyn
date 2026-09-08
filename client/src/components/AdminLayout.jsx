@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { path: '/admin/employers',     icon: '🏥', label: 'Employers' },
   { path: '/admin/jobs',          icon: '📋', label: 'Jobs' },
   { path: '/admin/applications',  icon: '📨', label: 'Applications' },
+  { path: '/admin/requests',      icon: '🤝', label: 'Nurse Requests' },
   { path: '/admin/payments',      icon: '💳', label: 'Payments' },
   { path: '/admin/shifts',        icon: '⏰', label: 'Per Diem Shifts' },
   { path: '/admin/settings',      icon: '⚙️', label: 'Settings' },

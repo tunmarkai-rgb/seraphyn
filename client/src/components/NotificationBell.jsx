@@ -17,6 +17,14 @@ function resolveNotificationLink(item, role) {
     return role === 'admin' ? '/admin/applications' : '/messages'
   }
 
+  // Without this branch every nurse-request notification falls through to
+  // /messages, which is the wrong screen for all three roles.
+  if (item.entity_type === 'nurse_request') {
+    if (role === 'admin') return '/admin/requests'
+    if (role === 'nurse') return '/nurse/requests'
+    return '/employer/requests'
+  }
+
   if (item.entity_type === 'nurse_profile') {
     return role === 'admin' ? '/admin/nurses' : '/nurse/profile'
   }

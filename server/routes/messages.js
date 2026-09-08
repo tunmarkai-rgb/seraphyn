@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { employerHasFullAccess } = require('../lib/employer-access')
 const { createMessageNotification } = require('../lib/notifications')
 
 router.use(requireAuth, requireRole('nurse', 'employer', 'admin'))
@@ -52,15 +53,7 @@ function userCanAccessApplication(application, user) {
   return false
 }
 
-async function employerIsApproved(userId) {
-  const { data: employer } = await supabase
-    .from('employer_profiles')
-    .select('onboarding_stage, approved_at')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  return employer?.onboarding_stage === 'approved' && Boolean(employer?.approved_at)
-}
+const employerIsApproved = employerHasFullAccess
 
 async function userCanStartDirectThread(sender, receiver) {
   if (!sender || !receiver || sender.id === receiver.id) return false

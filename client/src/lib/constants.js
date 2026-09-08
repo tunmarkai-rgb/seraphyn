@@ -35,3 +35,22 @@ export const US_STATES = [
   'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
   'VA','WA','WV','WI','WY',
 ]
+
+export const SHIFT_TYPE_OPTIONS = [
+  { value: 'day', label: 'Day Shift' },
+  { value: 'night', label: 'Night Shift' },
+  { value: 'evening', label: 'Evening Shift' },
+  { value: 'mixed', label: 'Mixed Shifts' }
+]
+
+// Employer-facing labels for nurse requests. Deliberately coarser than the
+// internal status: employers must not learn whether the nurse has been asked
+// yet, because that becomes "why hasn't she answered". The server sends only
+// these labels; this map exists so the two employer screens cannot drift.
+export const NURSE_REQUEST_STATUS_LABELS = [
+  'In Review',
+  'Confirming Availability',
+  'Placed',
+  'Not Available',
+  'Withdrawn'
+]

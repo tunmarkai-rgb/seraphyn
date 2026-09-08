@@ -14,6 +14,15 @@ const {
   loadRateRows
 } = require('../lib/rates')
 const { setNurseDesiredRate } = require('../lib/nurse-rates')
+const {
+  nurseRequestShape,
+  loadRequest,
+  applyTransition,
+  loadEmployerSummaries,
+  EMPLOYER_STATUS_LABELS
+} = require('../lib/nurse-requests')
+const { notifyAdmins } = require('../lib/notifications')
+const { employerHasFullAccess } = require('../lib/employer-access')
 const upload = multer({ storage: multer.memoryStorage() })
 
 // Columns a nurse (or admin) may write through PUT /api/nurses/:id. An
@@ -58,16 +67,6 @@ async function createPrivateFileUrl(bucket, path) {
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 10)
   if (error) throw error
   return data?.signedUrl || ''
-}
-
-async function employerHasFullAccess(userId) {
-  const { data: ep } = await supabase
-    .from('employer_profiles')
-    .select('onboarding_stage, approved_at')
-    .eq('user_id', userId)
-    .single()
-
-  return ep?.onboarding_stage === 'approved' && ep?.approved_at
 }
 
 // GET /api/nurses — admin gets all fields, employer gets limited fields
@@ -520,7 +519,36 @@ router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, re
       const shape = isAdmin
         ? adminRateShape(rateRow, settings)
         : employerRateShape(rateRow, settings)
-      return res.json({ ...data, ...shape })
+
+      // So the employer's "Request This Nurse" button can show existing state
+      // instead of letting them submit a duplicate.
+      let myRequest = null
+      if (req.user.role === 'employer') {
+        const { data: ep } = await supabase
+          .from('employer_profiles')
+          .select('id')
+          .eq('user_id', req.user.id)
+          .maybeSingle()
+
+        if (ep?.id) {
+          const { data: existing } = await supabase
+            .from('nurse_requests')
+            .select('id, status')
+            .eq('employer_id', ep.id)
+            .eq('nurse_id', req.params.id)
+            .not('status', 'in', '(nurse_declined,placed,rejected,closed)')
+            .maybeSingle()
+
+          if (existing) {
+            myRequest = {
+              id: existing.id,
+              status_label: EMPLOYER_STATUS_LABELS[existing.status] || 'In Review'
+            }
+          }
+        }
+      }
+
+      return res.json({ ...data, ...shape, my_request: myRequest })
     }
   } catch (rateError) {
     console.error('Failed to attach nurse rate:', rateError.message)
@@ -563,6 +591,78 @@ router.put('/:id', requireAuth, requireRole('nurse', 'admin'), async (req, res) 
 
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// GET /api/nurses/self/requests
+// Only requests an admin has presented. Nothing at submitted/reviewing --
+// that is the admin gate, and the nurse must not see a request that has not
+// been vetted and priced.
+router.get('/self/requests', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) return res.status(403).json({ error: 'Nurse access required' })
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const { data, error } = await supabase
+      .from('nurse_requests')
+      .select('*')
+      .eq('nurse_id', profile.id)
+      .in('status', ['presented', 'nurse_accepted', 'nurse_declined', 'placed'])
+      .order('created_at', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    const rows = data || []
+    const employers = await loadEmployerSummaries(rows.map((r) => r.employer_id))
+    res.json(rows.map((r) => nurseRequestShape(r, employers.get(r.employer_id) || null)))
+  } catch (error) {
+    console.error('Nurse request list failed:', error.message)
+    res.status(500).json({ error: 'Failed to load your requests' })
+  }
+})
+
+// POST /api/nurses/self/requests/:id/respond
+// body { accept: boolean, note?: string }
+// The nurse answers directly -- admin gates the introduction, not the answer.
+router.post('/self/requests/:id/respond', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) return res.status(403).json({ error: 'Nurse access required' })
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const request = await loadRequest(req.params.id)
+    if (!request || request.nurse_id !== profile.id) {
+      return res.status(404).json({ error: 'Request not found' })
+    }
+
+    if (typeof req.body?.accept !== 'boolean') {
+      return res.status(400).json({ error: 'accept must be true or false' })
+    }
+
+    const toStatus = req.body.accept ? 'nurse_accepted' : 'nurse_declined'
+    const note = String(req.body.note || '').trim()
+
+    const result = await applyTransition(request, {
+      role: 'nurse',
+      actorId: req.user?.id,
+      toStatus,
+      patch: { nurse_response_note: note },
+      note
+    })
+    if (result.error) return res.status(result.status).json({ error: result.error })
+
+    await notifyAdmins({
+      type: `nurse_request.${toStatus}`,
+      title: req.body.accept ? 'Nurse accepted a request' : 'Nurse declined a request',
+      body: `${profile.first_name || 'A nurse'} ${req.body.accept ? 'accepted' : 'declined'}${note ? `: ${note}` : '.'}`,
+      entityType: 'nurse_request',
+      entityId: request.id
+    })
+
+    const employers = await loadEmployerSummaries([request.employer_id])
+    res.json(nurseRequestShape(result.request, employers.get(request.employer_id) || null))
+  } catch (error) {
+    console.error('Nurse request respond failed:', error.message)
+    res.status(500).json({ error: 'Failed to record your response' })
+  }
 })
 
 module.exports = router

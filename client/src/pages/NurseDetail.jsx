@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import { apiRequest } from '../lib/api'
 import { formatHourly } from '../lib/format'
+import RequestNurseModal from '../components/RequestNurseModal'
 
 export default function NurseDetail() {
   const { id } = useParams()
@@ -19,6 +20,10 @@ export default function NurseDetail() {
   // The API attaches has_rate only for the roles allowed a rate, so this
   // covers admins as well as fully-onboarded employers.
   const canSeeRate = nurse?.has_rate !== undefined
+  const [requestOpen, setRequestOpen] = useState(false)
+  // Locally overridable so the button flips to "Requested" without a refetch.
+  const [requestOverride, setRequestOverride] = useState(null)
+  const myRequest = requestOverride || nurse?.my_request || null
 
   useEffect(() => {
     void loadNurse()
@@ -141,14 +146,37 @@ export default function NurseDetail() {
             {isFullAccess ? `${nurse.first_name} ${nurse.last_name}` : `${nurse.first_name} ${nurse.last_name?.[0]}.`}
           </p>
           <p style={{ fontSize: '14px', color: 'rgba(245,245,240,0.7)' }}>{nurse.specialty}</p>
-          {isFullAccess && nurse.user_id && (
-            <button
-              type="button"
-              onClick={() => navigate(`/messages?direct=${nurse.user_id}`)}
-              style={{ marginTop: '18px', padding: '9px 16px', background: 'white', color: 'var(--deep-navy)', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '600', cursor: 'pointer' }}
-            >
-              Message Nurse
-            </button>
+          {isFullAccess && (
+            <div style={{ marginTop: '18px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {nurse.user_id && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/messages?direct=${nurse.user_id}`)}
+                  style={{ padding: '9px 16px', background: 'white', color: 'var(--deep-navy)', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Message Nurse
+                </button>
+              )}
+              {profile?.role === 'employer' && (
+                myRequest ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/employer/requests')}
+                    style={{ padding: '9px 16px', background: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Requested &mdash; {myRequest.status_label}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRequestOpen(true)}
+                    style={{ padding: '9px 16px', background: 'var(--warm-gold)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Request This Nurse
+                  </button>
+                )
+              )}
+            </div>
           )}
         </div>
 
@@ -249,6 +277,14 @@ export default function NurseDetail() {
           </div>
         )}
       </div>
+      {requestOpen && (
+        <RequestNurseModal
+          nurse={nurse}
+          employer={empProfile}
+          onClose={() => setRequestOpen(false)}
+          onSubmitted={(created) => setRequestOverride({ id: created.id, status_label: created.status_label })}
+        />
+      )}
     </div>
   )
 }

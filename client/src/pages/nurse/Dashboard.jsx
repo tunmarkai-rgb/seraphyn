@@ -253,6 +253,19 @@ export default function NurseDashboard() {
                 Set your rate &rarr;
               </Link>
             </div>
+
+            <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '20px', marginTop: '20px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Assignment Requests
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '12px' }}>
+                Facilities can ask for you by name. Requests appear here once your
+                coordinator has reviewed them.
+              </p>
+              <Link to="/nurse/requests" style={{ fontSize: '11px', color: 'var(--sky-blue)', fontWeight: '500', letterSpacing: '0.05em', textTransform: 'uppercase', textDecoration: 'none' }}>
+                View requests &rarr;
+              </Link>
+            </div>
           </div>
 
           {/* Right column — Recent applications */}

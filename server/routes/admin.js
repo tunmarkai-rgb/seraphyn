@@ -17,6 +17,14 @@ const {
   loadRateRows
 } = require('../lib/rates')
 const { setAdminRate, readRateHistory } = require('../lib/nurse-rates')
+const {
+  adminRequestShape,
+  loadRequest,
+  applyTransition,
+  loadNurseSummaries,
+  loadEmployerSummaries,
+  EMPLOYER_STATUS_LABELS
+} = require('../lib/nurse-requests')
 
 // All admin routes require auth + admin role
 router.use(requireAuth, requireRole('admin'))
@@ -807,6 +815,216 @@ router.post('/nurses/:id/job-matched', async (req, res) => {
   }
 
   res.json({ message: 'Job matched event dispatched' })
+})
+
+// Notifies the nurse and/or the employer after an admin moves a request.
+// The employer only ever receives the COARSE label, so they cannot infer
+// whether the nurse has been asked yet.
+async function notifyParticipants(request, fromStatus) {
+  try {
+    const [{ data: nurse }, { data: employer }] = await Promise.all([
+      supabase.from('nurse_profiles').select('id, user_id, first_name').eq('id', request.nurse_id).maybeSingle(),
+      supabase.from('employer_profiles').select('id, user_id, org_name').eq('id', request.employer_id).maybeSingle()
+    ])
+
+    const coarse = EMPLOYER_STATUS_LABELS[request.status] || 'In Review'
+
+    if (request.status === 'presented' && nurse?.user_id) {
+      await createNotification({
+        userId: nurse.user_id,
+        type: 'nurse_request.presented',
+        title: 'A Seraphyn client is requesting you',
+        body: 'Review the assignment details and let us know if you are available.',
+        entityType: 'nurse_request',
+        entityId: request.id
+      })
+    }
+
+    if (['placed', 'rejected', 'closed', 'nurse_accepted', 'nurse_declined'].includes(request.status) && employer?.user_id) {
+      await createNotification({
+        userId: employer.user_id,
+        type: `nurse_request.${request.status}`,
+        title: `Nurse request: ${coarse}`,
+        body: `Your request for ${nurse?.first_name || 'a nurse'} is now marked ${coarse}.`,
+        entityType: 'nurse_request',
+        entityId: request.id
+      })
+    }
+
+    if (request.status === 'placed' && nurse?.user_id) {
+      await createNotification({
+        userId: nurse.user_id,
+        type: 'nurse_request.placed',
+        title: 'You have been placed',
+        body: 'Your coordinator will follow up with assignment details.',
+        entityType: 'nurse_request',
+        entityId: request.id
+      })
+    }
+
+    dispatchPortalEvent(`nurse_request.${request.status}`, {
+      requestId: request.id,
+      fromStatus,
+      toStatus: request.status,
+      nurseId: request.nurse_id,
+      employerId: request.employer_id
+    }).catch((eventError) => console.error('Portal event failed:', eventError.message))
+  } catch (error) {
+    // Notification failure must never roll back a completed transition.
+    console.error('notifyParticipants failed:', error.message)
+  }
+}
+
+// --- Nurse requests -------------------------------------------------------
+
+// GET /api/admin/nurse-requests?status=
+router.get('/nurse-requests', async (req, res) => {
+  try {
+    let query = supabase.from('nurse_requests').select('*').order('created_at', { ascending: false })
+    if (req.query.status) query = query.eq('status', req.query.status)
+
+    const { data, error } = await query
+    if (error) return res.status(500).json({ error: error.message })
+
+    const rows = data || []
+    const [nurses, employers] = await Promise.all([
+      loadNurseSummaries(rows.map((r) => r.nurse_id)),
+      loadEmployerSummaries(rows.map((r) => r.employer_id))
+    ])
+
+    res.json(rows.map((r) => adminRequestShape(r, {
+      nurse: nurses.get(r.nurse_id) || null,
+      employer: employers.get(r.employer_id) || null
+    })))
+  } catch (error) {
+    console.error('Admin nurse request list failed:', error.message)
+    res.status(500).json({ error: 'Failed to load nurse requests' })
+  }
+})
+
+async function shapeOne(row) {
+  const [nurses, employers] = await Promise.all([
+    loadNurseSummaries([row.nurse_id]),
+    loadEmployerSummaries([row.employer_id])
+  ])
+  return adminRequestShape(row, {
+    nurse: nurses.get(row.nurse_id) || null,
+    employer: employers.get(row.employer_id) || null
+  })
+}
+
+// PUT /api/admin/nurse-requests/:id
+// Editable: status (via the transition map), offered_nurse_rate, admin_notes,
+// employer_visible_to_nurse. Allowlisted rather than spreading req.body.
+router.put('/nurse-requests/:id', async (req, res) => {
+  try {
+    const request = await loadRequest(req.params.id)
+    if (!request) return res.status(404).json({ error: 'Request not found' })
+
+    const body = req.body || {}
+    const patch = {}
+
+    if (Object.prototype.hasOwnProperty.call(body, 'offered_nurse_rate')) {
+      const raw = body.offered_nurse_rate
+      if (raw === null || raw === undefined || raw === '') {
+        patch.offered_nurse_rate = null
+      } else {
+        const rate = Number(raw)
+        if (!Number.isFinite(rate) || rate <= 0) {
+          return res.status(400).json({ error: 'Offered nurse rate must be greater than zero' })
+        }
+        patch.offered_nurse_rate = Math.round(rate * 100) / 100
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'admin_notes')) {
+      patch.admin_notes = String(body.admin_notes || '')
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'employer_visible_to_nurse')) {
+      patch.employer_visible_to_nurse = Boolean(body.employer_visible_to_nurse)
+    }
+
+    // A status change goes through the transition map; a plain field edit does not.
+    if (body.status && body.status !== request.status) {
+      const result = await applyTransition(request, {
+        role: 'admin',
+        actorId: req.user.id,
+        toStatus: body.status,
+        patch,
+        note: String(body.note || '').trim()
+      })
+      if (result.error) return res.status(result.status).json({ error: result.error })
+
+      await notifyParticipants(result.request, request.status)
+      return res.json(await shapeOne(result.request))
+    }
+
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'Nothing to update' })
+    }
+
+    const { data, error } = await supabase
+      .from('nurse_requests')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', request.id)
+      .select('*')
+      .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    res.json(await shapeOne(data))
+  } catch (error) {
+    console.error('Admin nurse request update failed:', error.message)
+    res.status(500).json({ error: 'Failed to update the request' })
+  }
+})
+
+// POST /api/admin/nurse-requests/:id/present
+// Reveals the request to the nurse. Requires an offered rate first -- the nurse
+// cannot make an informed decision without one.
+router.post('/nurse-requests/:id/present', async (req, res) => {
+  try {
+    const request = await loadRequest(req.params.id)
+    if (!request) return res.status(404).json({ error: 'Request not found' })
+
+    const offered = Object.prototype.hasOwnProperty.call(req.body || {}, 'offered_nurse_rate')
+      ? Number(req.body.offered_nurse_rate)
+      : request.offered_nurse_rate
+
+    if (!offered || !Number.isFinite(Number(offered)) || Number(offered) <= 0) {
+      return res.status(400).json({ error: 'Set the offered nurse rate before presenting this request' })
+    }
+
+    const patch = { offered_nurse_rate: Math.round(Number(offered) * 100) / 100 }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'employer_visible_to_nurse')) {
+      patch.employer_visible_to_nurse = Boolean(req.body.employer_visible_to_nurse)
+    }
+
+    const result = await applyTransition(request, {
+      role: 'admin',
+      actorId: req.user.id,
+      toStatus: 'presented',
+      patch,
+      note: 'Presented to nurse'
+    })
+    if (result.error) return res.status(result.status).json({ error: result.error })
+
+    await notifyParticipants(result.request, request.status)
+    res.json(await shapeOne(result.request))
+  } catch (error) {
+    console.error('Present nurse request failed:', error.message)
+    res.status(500).json({ error: 'Failed to present the request' })
+  }
+})
+
+// GET /api/admin/nurse-requests/:id/events
+router.get('/nurse-requests/:id/events', async (req, res) => {
+  const { data, error } = await supabase
+    .from('nurse_request_events')
+    .select('*')
+    .eq('request_id', req.params.id)
+    .order('created_at', { ascending: false })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
 })
 
 module.exports = router

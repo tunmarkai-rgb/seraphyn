@@ -238,6 +238,41 @@ Current keys:
 |---|---|
 | `per_diem_billing` | `markup_pct` (default 30), `rounding_increment` (0.50), `min_nurse_rate` (15), `max_nurse_rate` (400) |
 
+### nurse_requests
+Employer-initiated requests for a specific nurse. **Server-only** (RLS enabled,
+no policies) because the rate columns must not leak in either direction. See
+`docs/NURSE_REQUESTS.sql` for why this is not folded into `applications`.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| employer_id | uuid | FK to employer_profiles |
+| nurse_id | uuid | FK to nurse_profiles |
+| status | text | `submitted` \| `reviewing` \| `presented` \| `nurse_accepted` \| `nurse_declined` \| `placed` \| `rejected` \| `closed` |
+| engagement_type | text | `per_diem` \| `contract` |
+| specialty / city / state | text | |
+| start_date / end_date | date | `end_date` is contract-only |
+| hours_per_week | integer | |
+| shift_type | text | |
+| employer_note | text | what the employer typed |
+| admin_notes | text | internal only |
+| nurse_response_note | text | optional reason on decline |
+| quoted_bill_rate | numeric(8,2) | snapshot of what the employer was shown. **Never returned to the nurse** |
+| markup_pct_snapshot | numeric(6,2) | **Never returned to the nurse or employer** |
+| offered_nurse_rate | numeric(8,2) | what the nurse is told they are paid. **Never returned to the employer** |
+| employer_visible_to_nurse | boolean | admin controls when the facility identity is revealed |
+| presented_at / responded_at / placed_at / closed_at | timestamptz | lifecycle stamps |
+| closed_reason | text | |
+
+A partial unique index (`nurse_requests_one_live_per_pair`) allows one live
+request per employer/nurse pair, excluding terminal statuses so a facility can
+request the same nurse again after a decline or placement.
+
+### nurse_request_events
+Append-only transition log: `request_id`, `actor_role`
+(`employer`/`admin`/`nurse`/`system`), `actor_id`, `from_status`, `to_status`,
+`note`, `created_at`. RLS enabled, no policies.
+
 ---
 
 ## Storage Buckets
@@ -252,6 +287,14 @@ Current keys:
 ---
 
 ## Operational Notes
+
+**Nurse requests are admin-brokered.** A nurse sees nothing until an admin sets
+`offered_nurse_rate` and presents the request; after that the nurse accepts or
+declines directly with no admin relay. Employers receive only a coarse status
+label (In Review / Confirming Availability / Placed / Not Available /
+Withdrawn), because the raw status would reveal whether the nurse has been
+asked yet. The transition map in `server/lib/nurse-requests.js` is keyed by
+actor role and is the only thing that may change a status.
 
 **Bill rates are computed, never stored.** `bill_rate = nurse_rate x (1 + markup)`,
 rounded up to `rounding_increment`, calculated in `server/lib/rates.js` on read.

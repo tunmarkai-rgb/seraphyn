@@ -268,6 +268,12 @@ Current production n8n state:
   - the markup is a single global percentage (default 30%), editable at `/admin/settings`
   - per-diem/contract hourly only; direct hire keeps its 10% placement-fee model
   - `GET /api/nurses/directory` replaced the employer directory's direct Supabase query
+- Employer-initiated nurse requests ("Request this nurse"):
+  - employers request a specific nurse; admin reviews, sets the nurse's offered rate, then presents it
+  - the nurse sees nothing until presented, then accepts or declines directly with no admin relay
+  - employers see only coarse labels so they cannot tell whether the nurse has been asked yet
+  - lives in `nurse_requests`, not `applications` (no job, and rate columns would leak both ways)
+  - `server/lib/employer-access.js` now holds the single definition of employer full access, replacing four inline copies
 
 ---
 
@@ -293,3 +299,4 @@ Current production n8n state:
 | [docs/PAYMENTS.md](docs/PAYMENTS.md) | Offline billing + GHL Documents contract model |
 | [docs/N8N.md](docs/N8N.md) | M2 automation bundle and integration design |
 | [docs/NURSE_RATES.sql](docs/NURSE_RATES.sql) | Nurse rate + agency markup schema (hand-apply in Supabase) |
+| [docs/NURSE_REQUESTS.sql](docs/NURSE_REQUESTS.sql) | Employer-initiated nurse request schema (hand-apply in Supabase) |

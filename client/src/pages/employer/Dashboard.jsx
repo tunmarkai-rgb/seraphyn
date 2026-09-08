@@ -334,6 +334,7 @@ export default function EmployerDashboard() {
         <div className="cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginTop: '24px' }}>
           {[
             { icon: 'N', label: 'Browse Nurse Profiles', desc: 'Find qualified nurses for your positions', href: '/nurses' },
+            { icon: 'R', label: 'Nurse Requests', desc: 'Track nurses you have requested by name', href: '/employer/requests' },
             { icon: 'M', label: 'Messages', desc: 'Communicate with applicants directly', href: '/messages' },
             { icon: 'S', label: 'Account Setup', desc: 'Update organization details', href: '/employer/onboarding' }
           ].map((quickLink) => (
