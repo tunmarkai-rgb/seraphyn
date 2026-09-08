@@ -232,8 +232,8 @@ These flows are now part of M2:
 Supabase webhooks should trigger the core n8n flows. Optional portal-to-n8n event forwarding can use `N8N_WEBHOOK_URL`.
 
 Current production n8n state:
-- `Seraphyn - Portal Events Inbound` is live in production as workflow `xh5ruX7lGR9m8vIE`
-- `Seraphyn - Resume Parser` has been exported to production as workflow `xFl2h0aUGWqK7Zsb` and remains inactive until a real Anthropic API key is set
+- `Seraphyn - Portal Events Inbound` is live in production as workflow `JBhroT3TwEIrXPwj` (the instance was re-imported; the old ID `xh5ruX7lGR9m8vIE` is gone)
+- `Seraphyn - Resume Parser` is workflow `1uJ9q9dgaYSqczjZ` (old ID `xFl2h0aUGWqK7Zsb` is gone) and is deliberately **inactive**: its credentials are now wired and it reaches the Claude node, but the run OOM-kills the n8n container on the current droplet
 - native n8n credentials now hold the shared webhook secret and Supabase auth, so workflow JSON exports should not embed credentials directly
 - GHL is the approved owner for contact-facing notifications in M2; n8n remains the orchestrator behind those triggers
 
@@ -290,7 +290,9 @@ Current production n8n state:
 - The seeded test employer still owns the retained sample jobs/application data used for portal verification. Cleanup did not remove those records because the test employer account was intentionally preserved.
 - Admin UI still uses a mix of Supabase-direct and API-driven actions; approval and contract actions should prefer the server routes
 - Portal milestone events can now fan out to n8n and optional GHL workflow webhook URLs; fastest-launch recommendation is one shared `GHL_WORKFLOW_WEBHOOK_URL`, with per-event overrides available later via `GHL_WORKFLOW_WEBHOOK_URL_<EVENT_NAME>`
-- Resume parser production activation is blocked until the real `ANTHROPIC_API_KEY` is loaded into the native n8n `Seraphyn Anthropic API` credential
+- Resume parser activation is blocked on **droplet memory**, not credentials. The Anthropic key is verified working and wired into n8n; a real PDF run reaches `Resume Parser Agent` and then dies with "Workflow did not finish, possible out-of-memory issue", taking the n8n container down (Caddy returns 502 until it restarts). Give the droplet more memory, or move the parse off the agent node, before reactivating
+- n8n credentials on the current instance had to be recreated from scratch: the shared webhook credential existed but held no data, the Supabase credential ID did not exist, and the Anthropic credential ID was the literal placeholder `replace-me`. Live credentials are now `Seraphyn Portal Webhook Secret`, `Seraphyn Supabase Service Role` and `Seraphyn Anthropic API Key`
+- The `resumes` bucket is private, so the parser's download nodes use the authenticated `/storage/v1/object/{bucket}/{path}` endpoint with the Supabase service-role credential. Do **not** switch them back to the public URL, and do not make the bucket public
 
 ---
 

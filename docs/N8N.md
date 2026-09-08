@@ -26,9 +26,9 @@ Current implementation note:
 - n8n should still remain the preferred long-term owner for contact-sync orchestration and retry logic.
 
 Current production workflow state:
-- `Seraphyn - Portal Events Inbound` is active in production with workflow ID `xh5ruX7lGR9m8vIE`
-- `Seraphyn - Resume Parser` is exported to production with workflow ID `xFl2h0aUGWqK7Zsb`
-- the resume parser remains inactive until a real Anthropic key is loaded into the native n8n credential
+- `Seraphyn - Portal Events Inbound` is active in production with workflow ID `JBhroT3TwEIrXPwj`
+- `Seraphyn - Resume Parser` is workflow ID `1uJ9q9dgaYSqczjZ`, model Claude Sonnet 5 (`claude-sonnet-5`)
+- the resume parser is inactive because the run exhausts memory on the current droplet, not because of the key: the Anthropic credential is wired and the run reaches the agent node before crashing
 - the current blocker for live parsing validation is LLM credit, not missing workflow design
 
 ---
