@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, describeAuthError } from '../lib/supabase'
 import BrandLogo from '../components/BrandLogo'
 
 const ADMIN_EMAIL_ALLOWLIST = new Set(['kundayiw@gmail.com', 'info@seraphyncare.com'])
@@ -49,7 +49,7 @@ export default function Login() {
       else if (role === 'admin') navigate('/admin')
       else navigate('/')
     } catch (err) {
-      setError(err.message)
+      setError(describeAuthError(err))
     } finally {
       setLoading(false)
     }
