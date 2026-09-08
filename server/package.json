@@ -1,27 +1,31 @@
 {
-  "name": "server",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@supabase/supabase-js": "^2.99.3",
-    "axios": "^1.13.6",
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "multer": "^2.1.1",
-    "pdf-lib": "^1.17.1",
-    "resend": "^6.9.4",
-    "stripe": "^20.4.1"
-  }
+    "name":  "server",
+    "version":  "1.0.0",
+    "description":  "",
+    "main":  "index.js",
+    "scripts":  {
+                    "start":  "node index.js",
+                    "test":  "node --test test/*.test.js",
+                    "check":  "npm test"
+                },
+    "keywords":  [
+
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "dependencies":  {
+                         "@sentry/node":  "^10.70.0",
+                         "@supabase/supabase-js":  "^2.99.3",
+                         "axios":  "^1.13.6",
+                         "bcryptjs":  "^3.0.3",
+                         "cors":  "^2.8.6",
+                         "dotenv":  "^17.3.1",
+                         "express":  "^5.2.1",
+                         "jsonwebtoken":  "^9.0.3",
+                         "multer":  "^2.1.1",
+                         "pdf-lib":  "^1.17.1",
+                         "resend":  "^6.9.4",
+                         "stripe":  "^20.4.1"
+                     }
 }

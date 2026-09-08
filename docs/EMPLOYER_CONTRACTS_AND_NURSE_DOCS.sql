@@ -17,6 +17,59 @@ create index if not exists nurse_documents_nurse_id_idx
 create index if not exists nurse_documents_type_idx
   on public.nurse_documents (document_type);
 
+alter table public.nurse_documents enable row level security;
+
+drop policy if exists "Nurses can manage own certification documents"
+  on public.nurse_documents;
+create policy "Nurses can manage own certification documents"
+  on public.nurse_documents
+  for all
+  using (
+    exists (
+      select 1
+      from public.nurse_profiles np
+      where np.id = nurse_documents.nurse_id
+        and np.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.nurse_profiles np
+      where np.id = nurse_documents.nurse_id
+        and np.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Admins can read all certification documents"
+  on public.nurse_documents;
+create policy "Admins can read all certification documents"
+  on public.nurse_documents
+  for select
+  using (
+    exists (
+      select 1
+      from public.users u
+      where u.id = auth.uid()
+        and u.role = 'admin'
+    )
+  );
+
+drop policy if exists "Approved employers can read certification documents"
+  on public.nurse_documents;
+create policy "Approved employers can read certification documents"
+  on public.nurse_documents
+  for select
+  using (
+    exists (
+      select 1
+      from public.employer_profiles ep
+      where ep.user_id = auth.uid()
+        and ep.status = 'approved'
+        and coalesce(ep.contract_signed, false) = true
+    )
+  );
+
 alter table public.contracts
   add column if not exists document_type text,
   add column if not exists title text,
