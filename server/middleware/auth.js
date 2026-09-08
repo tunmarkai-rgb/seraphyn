@@ -73,6 +73,41 @@ async function requireSessionUser(req, res, next) {
   }
 }
 
+// Same resolution as requireAuth, but never rejects. Used by routes that serve
+// guests and signed-in users from one handler and vary the payload by role --
+// req.user is left undefined when there is no usable token.
+async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return next()
+
+  const token = authHeader.split(' ')[1]
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    if (error || !user) return next()
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('id, role, status, full_name, email')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || profile.status === 'suspended') return next()
+
+    req.user = {
+      ...user,
+      role: profile.role,
+      status: profile.status,
+      full_name: profile.full_name,
+      email: profile.email
+    }
+  } catch {
+    // Treat any failure as "not signed in" rather than erroring the request.
+  }
+
+  next()
+}
+
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Not authenticated' })
@@ -91,4 +126,4 @@ function requireApproved(req, res, next) {
   next()
 }
 
-module.exports = { requireAuth, requireSessionUser, requireRole, requireApproved }
+module.exports = { requireAuth, requireSessionUser, optionalAuth, requireRole, requireApproved }

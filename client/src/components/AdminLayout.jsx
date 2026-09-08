@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { path: '/admin/applications',  icon: '📨', label: 'Applications' },
   { path: '/admin/payments',      icon: '💳', label: 'Payments' },
   { path: '/admin/shifts',        icon: '⏰', label: 'Per Diem Shifts' },
+  { path: '/admin/settings',      icon: '⚙️', label: 'Settings' },
 ]
 
 export default function AdminLayout({ children, title }) {

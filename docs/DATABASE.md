@@ -191,6 +191,53 @@
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
+### per_diem_shifts
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| employer_id | uuid | FK to employer_profiles |
+| nurse_id | uuid | nullable FK to nurse_profiles. Read by admin screens but **no code path currently writes it** |
+| specialty | text | |
+| shift_date | date | |
+| start_time / end_time | time | |
+| hourly_rate | numeric | the bill rate the employer pays, employer-entered |
+| notes / admin_notes | text | |
+| status | text | `open` \| `filled` \| `completed` \| `cancelled` |
+| updated_at | timestamptz | |
+
+### nurse_rates
+Nurse self-set hourly rates. **Server-only writes.** See `docs/NURSE_RATES.sql`.
+
+| Column | Type | Notes |
+|---|---|---|
+| nurse_id | uuid | PK, FK to nurse_profiles |
+| desired_hourly | numeric(8,2) | what the nurse asked for, nullable |
+| admin_hourly | numeric(8,2) | admin override; wins over desired_hourly |
+| markup_pct_override | numeric(6,2) | per-nurse markup; null means use the platform default |
+| previous_hourly | numeric(8,2) | prior value, for quick reference |
+| rate_source | text | `nurse` \| `admin` |
+| updated_by | uuid | FK to users |
+
+RLS: enabled. Select policies for the owning nurse and for admins only. **No
+insert/update/delete policies and no employer policy** — employers get zero rows
+no matter what they select, and all writes go through the Express server.
+
+### nurse_rate_history
+Append-only audit of every rate change (`nurse_id`, `source`, `field`,
+`old_value`, `new_value`, `markup_pct_at_change`, `bill_rate_at_change`,
+`changed_by`, `reason`, `created_at`). RLS enabled with no policies: server-only.
+
+### app_settings / app_settings_history
+Platform configuration as `key` + `value jsonb`, with an append-only history
+table. RLS enabled with **no policies** on both, so the publishable key sees an
+empty table and only the service-role server can read or write.
+
+Current keys:
+
+| Key | Contents |
+|---|---|
+| `per_diem_billing` | `markup_pct` (default 30), `rounding_increment` (0.50), `min_nurse_rate` (15), `max_nurse_rate` (400) |
+
 ---
 
 ## Storage Buckets
@@ -205,6 +252,18 @@
 ---
 
 ## Operational Notes
+
+**Bill rates are computed, never stored.** `bill_rate = nurse_rate x (1 + markup)`,
+rounded up to `rounding_increment`, calculated in `server/lib/rates.js` on read.
+There is deliberately no rate column on `nurse_profiles`: employers can read that
+table, and Postgres RLS is row-level rather than column-level, so any rate column
+there would be readable by every employer that can see the row. A markup change
+therefore takes effect everywhere immediately with no backfill.
+
+**The live schema is not fully in this repo.** RLS is enabled and enforcing on
+`nurse_profiles`, `employer_profiles`, `applications` and `users` in production,
+but those policies were applied by hand in the Supabase dashboard and are not in
+any file here. Dump `pg_policies` before changing access control.
 
 - Employer onboarding Stage 1 now writes through `POST /api/employers/onboarding/profile` so server logic can backfill `public.users` / `employer_profiles` safely.
 - Employer agreement signing is now portal-native first. GHL document send remains a legacy fallback path.

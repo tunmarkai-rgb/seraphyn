@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
+import AdminRatePanel from '../../components/AdminRatePanel'
 
 export default function AdminNurses() {
   const [searchParams] = useSearchParams()
@@ -13,6 +14,7 @@ export default function AdminNurses() {
   const [actionLoading, setActionLoading] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [feedback, setFeedback] = useState('')
+  const [savingRate, setSavingRate] = useState(null)
 
   const nurses = filter === 'all' ? allNurses : allNurses.filter((nurse) => nurse.users?.status === filter)
 
@@ -28,6 +30,19 @@ export default function AdminNurses() {
     setExpanded(match.id)
     void loadDocuments(match.id)
   }, [searchParams, allNurses])
+
+  async function saveRate(nurseId, payload) {
+    setSavingRate(nurseId)
+    try {
+      const updated = await apiRequest(`/api/admin/nurses/${nurseId}/rate`, {
+        method: 'PUT',
+        body: payload
+      })
+      setAllNurses((prev) => prev.map((n) => (n.id === nurseId ? { ...n, rate: updated } : n)))
+    } finally {
+      setSavingRate(null)
+    }
+  }
 
   async function loadNurses() {
     setLoading(true)
@@ -183,6 +198,12 @@ export default function AdminNurses() {
                         </div>
                       ))}
                     </div>
+
+                    <AdminRatePanel
+                      rate={nurse.rate}
+                      saving={savingRate === nurse.id}
+                      onSave={(payload) => saveRate(nurse.id, payload)}
+                    />
 
                     {nurse.bio && (
                       <div style={{ marginBottom: '16px' }}>

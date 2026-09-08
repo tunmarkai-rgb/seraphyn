@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
 import { NURSE_AVAILABILITY_OPTIONS, NURSE_SHIFT_PREFERENCES, SPECIALTIES, US_STATES } from '../../lib/constants'
 import { apiRequest } from '../../lib/api'
+import { formatHourly } from '../../lib/format'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
@@ -52,6 +53,15 @@ export default function NurseProfile() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
+  // Rate lives in its own table behind the API, so it gets its own state and
+  // its own save action rather than joining the profile upsert below.
+  const [rate, setRate] = useState(null)
+  const [rateInput, setRateInput] = useState('')
+  const [rateSaving, setRateSaving] = useState(false)
+  const [rateSaved, setRateSaved] = useState(false)
+  const [rateError, setRateError] = useState('')
+  const [rateAvailable, setRateAvailable] = useState(true)
+
   useEffect(() => {
     if (user) loadProfile()
   }, [user])
@@ -89,6 +99,57 @@ export default function NurseProfile() {
           console.error('Failed to load certification documents:', docsError.message)
         }
       }
+    }
+
+    try {
+      const rateData = await apiRequest('/api/nurses/self/rate')
+      setRate(rateData)
+      setRateInput(rateData?.desired_hourly != null ? String(rateData.desired_hourly) : '')
+      setRateAvailable(true)
+    } catch (rateLoadError) {
+      // Never let the rate section break the rest of the profile page.
+      console.error('Failed to load rate:', rateLoadError.message)
+      setRateAvailable(false)
+    }
+  }
+
+  async function saveRate() {
+    setRateError('')
+    setRateSaved(false)
+
+    const trimmed = String(rateInput).trim()
+    if (trimmed !== '') {
+      const parsed = Number(trimmed)
+      const min = rate?.min_rate ?? 15
+      const max = rate?.max_rate ?? 400
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setRateError('Enter a valid hourly rate.')
+        return
+      }
+      if (parsed < min) {
+        setRateError(`Rate must be at least $${min}/hr.`)
+        return
+      }
+      if (parsed > max) {
+        setRateError(`Rate must be $${max}/hr or less.`)
+        return
+      }
+    }
+
+    setRateSaving(true)
+    try {
+      const updated = await apiRequest('/api/nurses/self/rate', {
+        method: 'PUT',
+        body: { hourly_rate: trimmed === '' ? null : Number(trimmed) }
+      })
+      setRate(updated)
+      setRateInput(updated?.desired_hourly != null ? String(updated.desired_hourly) : '')
+      setRateSaved(true)
+      setTimeout(() => setRateSaved(false), 2500)
+    } catch (saveError) {
+      setRateError(saveError.message)
+    } finally {
+      setRateSaving(false)
     }
   }
 
@@ -345,6 +406,77 @@ export default function NurseProfile() {
               </div>
             </div>
           </section>
+
+          {/* Rate. Own save action -- the profile form below writes straight to
+              Supabase, while the rate goes through the API. */}
+          {rateAvailable && (
+          <section style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '28px', marginBottom: '20px' }}>
+            <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+              Your Rate
+            </h2>
+
+            <label style={labelStyle}>Desired Hourly Rate</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '320px' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '14px', pointerEvents: 'none' }}>$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={rate?.min_rate ?? 15}
+                  max={rate?.max_rate ?? 400}
+                  step="0.50"
+                  value={rateInput}
+                  onChange={(e) => setRateInput(e.target.value)}
+                  style={{ ...inputStyle, paddingLeft: '28px' }}
+                  placeholder="e.g. 65.00"
+                />
+              </div>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>/ hour</span>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px', lineHeight: 1.6 }}>
+              This is your take-home rate for per diem and contract assignments.
+              Seraphyn bills facilities separately, so what a facility pays is not
+              what you are paid. Leave this blank if you would rather discuss it
+              with your coordinator.
+            </p>
+
+            {!rate?.effective_hourly && (
+              <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(201,169,110,0.12)', border: '1px solid var(--warm-gold)', borderRadius: '2px', fontSize: '12px', color: 'var(--deep-navy)', lineHeight: 1.6 }}>
+                You have not set a rate yet. Facilities see &ldquo;Rate on request&rdquo; until you do &mdash;
+                setting one gets you into rate-filtered searches.
+              </div>
+            )}
+
+            {rate?.is_admin_overridden && (
+              <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(74,144,164,0.12)', border: '1px solid var(--sky-blue)', borderRadius: '2px', fontSize: '12px', color: 'var(--deep-navy)', lineHeight: 1.6 }}>
+                Seraphyn is currently placing you at {formatHourly(rate.effective_hourly)}.
+                {rate.desired_hourly != null && ` Your requested rate of ${formatHourly(rate.desired_hourly)} is on file.`}
+                {' '}Contact your coordinator to discuss.
+              </div>
+            )}
+
+            {rateError && (
+              <div style={{ marginTop: '14px', padding: '10px 14px', background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.3)', borderRadius: '2px', fontSize: '12px', color: '#B43C3C' }}>
+                {rateError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '18px' }}>
+              <button
+                type="button"
+                onClick={saveRate}
+                disabled={rateSaving}
+                style={{ padding: '10px 22px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: rateSaving ? 'not-allowed' : 'pointer', opacity: rateSaving ? 0.6 : 1 }}
+              >
+                {rateSaving ? 'Saving...' : 'Save Rate'}
+              </button>
+              {rateSaved && (
+                <span style={{ fontSize: '12px', color: 'var(--success)' }}>&#10003; Rate saved.</span>
+              )}
+            </div>
+          </section>
+          )}
 
           {/* License */}
           <section style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '28px', marginBottom: '20px' }}>

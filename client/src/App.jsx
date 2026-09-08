@@ -36,6 +36,7 @@ const AdminJobs = lazy(() => import('./pages/admin/Jobs'))
 const AdminApplications = lazy(() => import('./pages/admin/Applications'))
 const AdminPayments = lazy(() => import('./pages/admin/Payments'))
 const AdminShifts = lazy(() => import('./pages/admin/Shifts'))
+const AdminSettings = lazy(() => import('./pages/admin/Settings'))
 
 function RouteFallback() {
   return (
@@ -216,6 +217,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminShifts />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/settings"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminSettings />
               </ProtectedRoute>
             }
           />

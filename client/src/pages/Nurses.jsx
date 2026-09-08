@@ -1,64 +1,83 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import { NURSE_AVAILABILITY_OPTIONS, SPECIALTIES } from '../lib/constants'
+import { apiRequest, publicApiRequest } from '../lib/api'
+import { formatHourly } from '../lib/format'
+
+const EMPTY_FILTERS = {
+  specialty: '', availability: '', experience: '', rate_min: '', rate_max: '', sort: 'newest'
+}
 
 export default function NurseDirectory() {
   const { user, profile } = useAuth()
   const [nurses, setNurses] = useState([])
-  const [filtered, setFiltered] = useState([])
   const [loading, setLoading] = useState(true)
-  const [empProfile, setEmpProfile] = useState(null)
-  const [filters, setFilters] = useState({ specialty: '', availability: '', experience: '' })
+  // Authoritative full-access signal: the server decides who may see a rate,
+  // and returns full name/bio to exactly the same audience.
+  const [ratesVisible, setRatesVisible] = useState(false)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
 
-  const isFullAccess = empProfile?.onboarding_stage === 'approved' && empProfile?.approved_at
+  const isFullAccess = ratesVisible
+  // Employers see the row even before approval (locked), so the value is a
+  // visible reason to finish onboarding. Guests and nurses get no row at all.
+  const showRateRow = isFullAccess || profile?.role === 'employer'
 
-  useEffect(() => {
-    if (user && profile?.role === 'employer') {
-      loadEmployerProfile()
-    }
-    loadNurses()
-  }, [user, profile])
-
-  useEffect(() => {
-    applyFilters()
-  }, [nurses, filters])
-
-  async function loadEmployerProfile() {
-    const { data } = await supabase
-      .from('employer_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-    setEmpProfile(data)
-  }
-
-  async function loadNurses() {
+  const loadNurses = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('nurse_profiles')
-      .select('id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at')
-      .not('approved_at', 'is', null)
-      .order('approved_at', { ascending: false })
-    setNurses(data || [])
-    setLoading(false)
-  }
+    try {
+      // Signed-in callers get their role's payload; guests get the base fields.
+      const request = user ? apiRequest : publicApiRequest
+      const result = await request('/api/nurses/directory')
+      setNurses(result?.nurses || [])
+      setRatesVisible(Boolean(result?.rates_visible))
+    } catch (error) {
+      console.error('Failed to load nurse directory:', error.message)
+      setNurses([])
+      setRatesVisible(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
 
-  function applyFilters() {
-    let result = [...nurses]
+  useEffect(() => {
+    loadNurses()
+  }, [loadNurses])
+
+  const filtered = useMemo(() => {
+    let result = nurses
     if (filters.specialty) result = result.filter(n => n.specialty === filters.specialty)
     if (filters.availability) result = result.filter(n => n.availability === filters.availability)
     if (filters.experience === '0-2') result = result.filter(n => n.years_experience <= 2)
     else if (filters.experience === '3-5') result = result.filter(n => n.years_experience >= 3 && n.years_experience <= 5)
     else if (filters.experience === '6-10') result = result.filter(n => n.years_experience >= 6 && n.years_experience <= 10)
     else if (filters.experience === '10+') result = result.filter(n => n.years_experience > 10)
-    setFiltered(result)
-  }
+
+    // A nurse with no published rate can't be evaluated against a budget, so
+    // they drop out once either bound is set -- same as the Jobs page.
+    if (filters.rate_min) result = result.filter(n => n.bill_rate && n.bill_rate >= parseFloat(filters.rate_min))
+    if (filters.rate_max) result = result.filter(n => n.bill_rate && n.bill_rate <= parseFloat(filters.rate_max))
+
+    if (filters.sort === 'rate_asc' || filters.sort === 'rate_desc') {
+      // Rate-less nurses always sort last, so the list never opens on a wall
+      // of "Rate on request".
+      const dir = filters.sort === 'rate_asc' ? 1 : -1
+      result = [...result].sort((a, b) => {
+        if (a.bill_rate == null && b.bill_rate == null) return 0
+        if (a.bill_rate == null) return 1
+        if (b.bill_rate == null) return -1
+        return (a.bill_rate - b.bill_rate) * dir
+      })
+    } else if (filters.sort === 'experience') {
+      result = [...result].sort((a, b) => (b.years_experience || 0) - (a.years_experience || 0))
+    }
+
+    return result
+  }, [nurses, filters])
 
   function handleFilter(e) { setFilters({ ...filters, [e.target.name]: e.target.value }) }
-  function clearFilters() { setFilters({ specialty: '', availability: '', experience: '' }) }
+  function clearFilters() { setFilters(EMPTY_FILTERS) }
 
   const selectStyle = {
     padding: '9px 14px', background: 'white', border: '1px solid var(--border)',
@@ -124,6 +143,27 @@ export default function NurseDirectory() {
                   <option value="10+">10+ years</option>
                 </select>
               </div>
+              {isFullAccess && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Bill Rate ($/hr)</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <input name="rate_min" type="number" min="0" value={filters.rate_min} onChange={handleFilter} placeholder="Min" style={selectStyle} />
+                    <input name="rate_max" type="number" min="0" value={filters.rate_max} onChange={handleFilter} placeholder="Max" style={selectStyle} />
+                  </div>
+                  <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
+                    Nurses without a published rate are hidden when a range is set.
+                  </p>
+                </div>
+              )}
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Sort By</label>
+                <select name="sort" value={filters.sort} onChange={handleFilter} style={selectStyle}>
+                  <option value="newest">Newest</option>
+                  {isFullAccess && <option value="rate_asc">Bill rate: low to high</option>}
+                  {isFullAccess && <option value="rate_desc">Bill rate: high to low</option>}
+                  <option value="experience">Most experienced</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -167,6 +207,24 @@ export default function NurseDirectory() {
                           {nurse.years_experience} yr{nurse.years_experience !== 1 ? 's' : ''}
                         </span>
                       </div>
+                      {/* Labelled BILL RATE deliberately: an employer reading this
+                          as nurse take-home is the commercial risk of the feature.
+                          Always renders so cards in the 3-up grid stay equal height. */}
+                      {showRateRow && (
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', padding: '10px 0', marginBottom: '10px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--warm-gold)', fontWeight: '500' }}>Bill Rate</span>
+                          {!isFullAccess ? (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Unlocks after approval</span>
+                          ) : nurse.has_rate ? (
+                            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)', lineHeight: 1 }}>
+                              {formatHourly(nurse.bill_rate).replace('/hr', '')}
+                              <span style={{ fontSize: '11px', fontFamily: 'DM Sans, sans-serif', fontWeight: '300', color: 'var(--text-muted)' }}>/hr</span>
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Rate on request</span>
+                          )}
+                        </div>
+                      )}
                       {(nurse.certifications || []).length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px' }}>
                           {nurse.certifications.slice(0, 3).map((c, i) => (

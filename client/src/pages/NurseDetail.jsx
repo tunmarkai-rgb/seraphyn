@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import { apiRequest } from '../lib/api'
+import { formatHourly } from '../lib/format'
 
 export default function NurseDetail() {
   const { id } = useParams()
@@ -15,6 +16,9 @@ export default function NurseDetail() {
   const [error, setError] = useState('')
 
   const isFullAccess = empProfile?.onboarding_stage === 'approved' && empProfile?.approved_at
+  // The API attaches has_rate only for the roles allowed a rate, so this
+  // covers admins as well as fully-onboarded employers.
+  const canSeeRate = nurse?.has_rate !== undefined
 
   useEffect(() => {
     void loadNurse()
@@ -162,11 +166,14 @@ export default function NurseDetail() {
           <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
             Professional Details
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: canSeeRate ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '20px' }}>
             {[
               ['Availability', nurse.availability || 'Contact for details'],
               ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '-'],
               ['Shift Preference', nurse.shift_preference || 'Flexible'],
+              // Bill rate, not nurse take-home. Only full-access employers and
+              // admins receive a rate from the API at all.
+              ...(canSeeRate ? [['Bill Rate', formatHourly(nurse.bill_rate)]] : []),
             ].map(([label, value]) => (
               <div key={label}>
                 <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>{label}</p>

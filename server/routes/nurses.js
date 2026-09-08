@@ -2,9 +2,35 @@ const express = require('express')
 const router = express.Router()
 const multer = require('multer')
 const { supabase } = require('../config/supabase')
-const { requireAuth, requireRole, requireSessionUser } = require('../middleware/auth')
+const { requireAuth, requireRole, requireSessionUser, optionalAuth } = require('../middleware/auth')
 const { ensureNurseProfileRow, ensurePublicUserForAuthUser, normalizeShiftPreference } = require('../lib/user-bootstrap')
+const {
+  getBillingSettings,
+  validateHourlyRate,
+  employerRateShape,
+  adminRateShape,
+  nurseRateShape,
+  loadRateRow,
+  loadRateRows
+} = require('../lib/rates')
+const { setNurseDesiredRate } = require('../lib/nurse-rates')
 const upload = multer({ storage: multer.memoryStorage() })
+
+// Columns a nurse (or admin) may write through PUT /api/nurses/:id. An
+// allowlist, not a denylist -- a denylist silently exposes every column added
+// to nurse_profiles later.
+const NURSE_UPDATABLE_FIELDS = [
+  'first_name', 'last_name', 'specialty', 'license_number', 'license_state',
+  'years_experience', 'availability', 'shift_preference', 'bio',
+  'certifications', 'profile_photo_url', 'resume_url', 'license_url'
+]
+
+// Fields returned to employers on the directory. Rates are attached separately
+// from the nurse_rates table; they are never columns on nurse_profiles.
+const DIRECTORY_BASE_FIELDS =
+  'id, first_name, specialty, years_experience, availability, shift_preference, certifications, profile_photo_url, approved_at'
+const DIRECTORY_FULL_FIELDS =
+  'id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at'
 
 function isNurseUser(req) {
   return req.user?.role === 'nurse' || req.authUser?.user_metadata?.role === 'nurse'
@@ -86,6 +112,94 @@ router.get('/featured', async (req, res) => {
     .limit(3)
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
+})
+
+// GET /api/nurses/directory — serves guests, nurses, employers and admins from
+// one handler. Bill rates are attached only for full-access employers and
+// admins; the nurse's own rate and the markup never appear in this payload.
+router.get('/directory', optionalAuth, async (req, res) => {
+  try {
+    const role = req.user?.role
+    const isAdmin = role === 'admin'
+
+    const hasFullAccess =
+      isAdmin || (role === 'employer' && (await employerHasFullAccess(req.user.id)))
+
+    const { data, error } = await supabase
+      .from('nurse_profiles')
+      .select(hasFullAccess ? DIRECTORY_FULL_FIELDS : DIRECTORY_BASE_FIELDS)
+      .not('approved_at', 'is', null)
+      .order('approved_at', { ascending: false })
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    const nurses = data || []
+
+    // Only these two roles ever see a rate.
+    if (!hasFullAccess) {
+      return res.json({ nurses, rates_visible: false })
+    }
+
+    // Rate attachment must not be able to take the directory down -- if the
+    // rate tables or settings row are missing, serve the profiles without rates.
+    try {
+      const settings = await getBillingSettings()
+      const rateRows = await loadRateRows(nurses.map((n) => n.id))
+
+      const withRates = nurses.map((nurse) => ({
+        ...nurse,
+        ...employerRateShape(rateRows.get(nurse.id) || null, settings)
+      }))
+
+      return res.json({ nurses: withRates, rates_visible: true })
+    } catch (rateError) {
+      console.error('Failed to attach directory rates:', rateError.message)
+      return res.json({ nurses, rates_visible: false })
+    }
+  } catch (error) {
+    console.error('Nurse directory failed:', error.message)
+    res.status(500).json({ error: 'Failed to load nurse directory' })
+  }
+})
+
+// GET /api/nurses/self/rate — the nurse's own rate. Never returns the bill rate
+// or the markup.
+router.get('/self/rate', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const settings = await getBillingSettings()
+    const rateRow = await loadRateRow(profile.id)
+
+    res.json(nurseRateShape(rateRow, settings))
+  } catch (error) {
+    console.error('Nurse rate read failed:', error.message)
+    res.status(500).json({ error: 'Failed to load your rate' })
+  }
+})
+
+// PUT /api/nurses/self/rate — body { hourly_rate: number | null }
+router.put('/self/rate', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+
+    const settings = await getBillingSettings()
+    const check = validateHourlyRate(req.body?.hourly_rate, settings)
+    if (!check.valid) return res.status(400).json({ error: check.error })
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const updated = await setNurseDesiredRate(profile.id, check.value, req.user?.id)
+
+    res.json(nurseRateShape(updated, settings))
+  } catch (error) {
+    console.error('Nurse rate update failed:', error.message)
+    res.status(500).json({ error: 'Failed to save your rate' })
+  }
 })
 
 router.post('/self/bootstrap', requireSessionUser, async (req, res) => {
@@ -395,13 +509,29 @@ router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, re
     .single()
 
   if (error) return res.status(404).json({ error: 'Nurse not found' })
+
+  // Attach the rate for the two roles allowed to see one. Employers get the
+  // bill rate only; admins additionally get the nurse rate and the markup.
+  try {
+    const fullAccess = isAdmin || (await employerHasFullAccess(req.user.id))
+    if (fullAccess) {
+      const settings = await getBillingSettings()
+      const rateRow = await loadRateRow(req.params.id)
+      const shape = isAdmin
+        ? adminRateShape(rateRow, settings)
+        : employerRateShape(rateRow, settings)
+      return res.json({ ...data, ...shape })
+    }
+  } catch (rateError) {
+    console.error('Failed to attach nurse rate:', rateError.message)
+  }
+
   res.json(data)
 })
 
 // PUT /api/nurses/:id — nurse updates own profile
 router.put('/:id', requireAuth, requireRole('nurse', 'admin'), async (req, res) => {
   const { id } = req.params
-  const updates = req.body
 
   // Verify ownership unless admin
   if (req.user.role !== 'admin') {
@@ -409,13 +539,28 @@ router.put('/:id', requireAuth, requireRole('nurse', 'admin'), async (req, res) 
     if (!np || np.user_id !== req.user.id) return res.status(403).json({ error: 'Not authorized' })
   }
 
-  // Remove fields that shouldn't be updated via API
-  delete updates.id
-  delete updates.user_id
-  delete updates.approved_at
+  // Allowlist rather than deleting a few known-bad keys, so columns added to
+  // nurse_profiles later are not writable through here by default.
+  const updates = {}
+  for (const field of NURSE_UPDATABLE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, field)) {
+      updates[field] = req.body[field]
+    }
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(400).json({ error: 'No updatable fields provided' })
+  }
+
   updates.updated_at = new Date().toISOString()
 
-  const { data, error } = await supabase.from('nurse_profiles').update(updates).eq('id', id).select().single()
+  const { data, error } = await supabase
+    .from('nurse_profiles')
+    .update(updates)
+    .eq('id', id)
+    .select(`id, user_id, ${NURSE_UPDATABLE_FIELDS.join(', ')}, approved_at, created_at, updated_at`)
+    .single()
+
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })

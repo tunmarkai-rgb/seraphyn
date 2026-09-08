@@ -237,6 +237,22 @@ export default function NurseDashboard() {
                 )
               })}
             </div>
+
+            {/* Rate nudge. Deliberately static rather than fetching the rate:
+                adding it to COMPLETION_FIELDS would drop every existing nurse
+                below 100% and trigger the completion nag. */}
+            <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '20px', marginTop: '20px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Your Rate
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '12px' }}>
+                Set your desired hourly rate so facilities can find you in rate-filtered
+                searches.
+              </p>
+              <Link to="/nurse/profile" style={{ fontSize: '11px', color: 'var(--sky-blue)', fontWeight: '500', letterSpacing: '0.05em', textTransform: 'uppercase', textDecoration: 'none' }}>
+                Set your rate &rarr;
+              </Link>
+            </div>
           </div>
 
           {/* Right column — Recent applications */}

@@ -44,9 +44,10 @@ Two-sided healthcare staffing marketplace.
 7. Supabase secret credentials stay server-only; Supabase publishable key stays frontend-safe only.
 8. Build must pass before closeout: `npm run build` in `client/`.
 9. Supabase Auth currently owns signup confirmation and password reset delivery; those auth emails are branded and sent through Resend SMTP, not GHL.
-10. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
-11. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
-12. Portal messaging supports both application threads and direct user-to-user threads. Direct threads store `messages.application_id = null`.
+10. Nurse rates and the agency markup are confidential. They live in `nurse_rates` and `app_settings`, both server-only. Employers see only a computed bill rate; never add a rate column to `nurse_profiles` or a rate field to any employer-facing payload.
+11. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
+12. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
+13. Portal messaging supports both application threads and direct user-to-user threads. Direct threads store `messages.application_id = null`.
 
 ---
 
@@ -119,7 +120,6 @@ Notes:
 - The frontend uses `VITE_APP_URL` when building auth email redirect targets so confirmation and reset links do not fall back to localhost.
 - The nurse lead bridge in production currently expects `x-seraphyn-secret: seraphyn2026!` for the GHL nurse lead webhook action.
 - Employer contract emails now go through Resend with attachments and `cc` support when agreements are signed in the portal; current CC target is `info@seraphyncare.com`.
-- Internal operational email alerts default to `info@seraphyncare.com` via `INTERNAL_ALERT_EMAIL` or the hardcoded fallback.
 
 ---
 
@@ -144,6 +144,8 @@ Behavior notes:
 - Reset-password links should land on `/auth/reset-password` and then return the user to `/login?reset=1` after a successful password change
 - `nurse.signup_confirmed` is fired after email confirmation succeeds, not immediately at signup creation
 - The public homepage at `/` is guest-facing only; signed-in nurses/employers are redirected to their dashboards and admins to `/admin`
+- The public nurse directory at `/nurses` is served by `GET /api/nurses/directory` and **intentionally shows approved nurses to signed-out guests** (first name, specialty, experience, certifications; no last name, no bio, no rate). Kundayi approved this on 2026-09-08. Before that route existed the page read `nurse_profiles` with the publishable key and rendered empty, because live RLS returns no rows to the `anon` role — do not treat the guest-visible directory as a regression
+- Bill rates on `/nurses` and `/nurses/:id` are shown only to fully-onboarded employers and admins; unapproved employers see `Unlocks after approval`, and guests and nurses see no rate row at all
 
 Current retained baseline accounts after cleanup:
 
@@ -193,9 +195,10 @@ All billing is offline for M2.
 - Step 2 of employer onboarding shows onboarding guidance plus both required agreements:
   - Direct Hire Agreement
   - Per Diem Staffing Agreement
-- `POST /api/employers/contracts/sign` signs both agreements in one session, stores signed PDFs in private Supabase storage, emails both signed copies to the employer, CCs `info@seraphyncare.com`, and raises internal approval notifications.
-- The employer agreement UX is now portal-native and field-driven rather than PDF-page review only; required agreement fields must be completed before both agreements can be marked reviewed and signed.
-- The rendered agreement templates now track the legal text of the source PDFs much more closely than the earlier short summaries, while preserving portal-native required fields/acknowledgements and final signed PDF output.
+- Internal operational email alerts default to `info@seraphyncare.com` via `INTERNAL_ALERT_EMAIL` or the hardcoded fallback.
+- `POST /api/employers/contracts/sign` signs both agreements in one session, appends an audit page to each PDF, stores them in private Supabase storage, emails both signed copies to the employer, and CCs `info@seraphyncare.com`.
+- The employer agreement UX is portal-native and field-driven rather than PDF-page review only; required agreement fields must be completed before both agreements can be marked reviewed and signed.
+- The rendered agreement templates track the legal text of the source PDFs closely, while preserving portal-native required fields/acknowledgements and final signed PDF output.
 - Signed documents update:
   - `contracts.status`
   - `contracts.document_type`
@@ -207,6 +210,12 @@ All billing is offline for M2.
 - `GET /api/contracts/:id/download` serves private signed download links for employers and admins.
 - `POST /api/admin/employers/:id/send-contract` still exists as the legacy GHL fallback path when needed.
 - Admin approval is still the final step before dashboard access.
+
+Messaging and handover notes:
+
+- Messaging supports direct admin-to-nurse, admin-to-employer, and approved employer-to-nurse conversations even when no application thread exists yet
+- Admin message threads render inside the admin shell; nurse/employer message threads keep the standard portal navbar
+- Client-facing pre-call handover is tracked in [docs/CLIENT_HANDOVER_2026-05-27.md](docs/CLIENT_HANDOVER_2026-05-27.md)
 
 ---
 
@@ -250,12 +259,15 @@ Current production n8n state:
   - `availability` is stored as `available`
   - legacy signup values such as `Permanent`, `Per Diem`, `Contract Travel`, `Day`, `Night`, `Evening`, and `Mixed` are normalized during bootstrap
 - Nurse profile page now exposes a direct `Go to Dashboard` CTA so mobile users are not trapped at the bottom of the form
-- Messaging now supports direct admin-to-nurse, admin-to-employer, and approved employer-to-nurse conversations even when no application thread exists yet
-- Admin message threads render inside the admin shell; nurse/employer message threads keep the standard portal navbar
-- Client-facing pre-call handover is tracked in [docs/CLIENT_HANDOVER_2026-05-27.md](docs/CLIENT_HANDOVER_2026-05-27.md)
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
 - Approval and application transitions routed through server hooks where needed
+- Nurse self-set hourly rates with an employer-facing agency markup:
+  - nurses set one optional rate on their profile; admin can override it with a required reason
+  - employers see only `bill_rate = nurse_rate x (1 + markup)`, rounded up to the configured increment
+  - the markup is a single global percentage (default 30%), editable at `/admin/settings`
+  - per-diem/contract hourly only; direct hire keeps its 10% placement-fee model
+  - `GET /api/nurses/directory` replaced the employer directory's direct Supabase query
 
 ---
 
@@ -280,3 +292,4 @@ Current production n8n state:
 | [docs/GHL_AUTOMATIONS.md](docs/GHL_AUTOMATIONS.md) | 11 workflow architecture and portal events |
 | [docs/PAYMENTS.md](docs/PAYMENTS.md) | Offline billing + GHL Documents contract model |
 | [docs/N8N.md](docs/N8N.md) | M2 automation bundle and integration design |
+| [docs/NURSE_RATES.sql](docs/NURSE_RATES.sql) | Nurse rate + agency markup schema (hand-apply in Supabase) |

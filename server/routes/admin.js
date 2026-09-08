@@ -6,6 +6,17 @@ const { sendContractTemplate } = require('../lib/ghl')
 const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sync')
 const { dispatchPortalEvent } = require('../lib/portal-events')
 const { createNotification } = require('../lib/notifications')
+const {
+  SETTINGS_KEY,
+  getBillingSettings,
+  invalidateBillingSettingsCache,
+  validateBillingSettings,
+  validateHourlyRate,
+  adminRateShape,
+  loadRateRow,
+  loadRateRows
+} = require('../lib/rates')
+const { setAdminRate, readRateHistory } = require('../lib/nurse-rates')
 
 // All admin routes require auth + admin role
 router.use(requireAuth, requireRole('admin'))
@@ -72,10 +83,143 @@ router.get('/nurses', async (req, res) => {
     }
   }
 
+  // Attach rates in one batch rather than a query per nurse.
+  let rateRows = new Map()
+  let settings = null
+  try {
+    settings = await getBillingSettings()
+    rateRows = await loadRateRows(nurseIds)
+  } catch (rateError) {
+    console.error('Failed to load nurse rates for admin list:', rateError.message)
+  }
+
   res.json((data || []).map((nurse) => ({
     ...nurse,
-    latest_application: latestApplicationsByNurse[nurse.id] || null
+    latest_application: latestApplicationsByNurse[nurse.id] || null,
+    rate: settings ? adminRateShape(rateRows.get(nurse.id) || null, settings) : null
   })))
+})
+
+// GET /api/admin/nurses/:id/rate
+router.get('/nurses/:id/rate', async (req, res) => {
+  try {
+    const settings = await getBillingSettings()
+    const rateRow = await loadRateRow(req.params.id)
+    res.json(adminRateShape(rateRow, settings))
+  } catch (error) {
+    console.error('Admin rate read failed:', error.message)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// GET /api/admin/nurses/:id/rate/history
+router.get('/nurses/:id/rate/history', async (req, res) => {
+  try {
+    res.json(await readRateHistory(req.params.id))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PUT /api/admin/nurses/:id/rate
+// body { admin_hourly?: number|null, markup_pct_override?: number|null, reason?: string }
+router.put('/nurses/:id/rate', async (req, res) => {
+  try {
+    const { data: nurse } = await supabase
+      .from('nurse_profiles')
+      .select('id')
+      .eq('id', req.params.id)
+      .single()
+
+    if (!nurse) return res.status(404).json({ error: 'Nurse not found' })
+
+    const settings = await getBillingSettings()
+    const body = req.body || {}
+    const patch = {}
+
+    if (Object.prototype.hasOwnProperty.call(body, 'admin_hourly')) {
+      const check = validateHourlyRate(body.admin_hourly, settings)
+      if (!check.valid) return res.status(400).json({ error: check.error })
+      patch.adminHourly = check.value
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'markup_pct_override')) {
+      const raw = body.markup_pct_override
+      if (raw === null || raw === undefined || raw === '') {
+        patch.markupPctOverride = null
+      } else {
+        const pct = Number(raw)
+        if (!Number.isFinite(pct) || pct <= 0 || pct > 500) {
+          return res.status(400).json({ error: 'Markup override must be between 0 and 500' })
+        }
+        patch.markupPctOverride = Math.round(pct * 100) / 100
+      }
+    }
+
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'Nothing to update' })
+    }
+
+    // An override without a reason leaves no trail for a later rate dispute.
+    if (patch.adminHourly !== undefined && patch.adminHourly !== null && !String(body.reason || '').trim()) {
+      return res.status(400).json({ error: 'A reason is required when overriding a nurse rate' })
+    }
+
+    const updated = await setAdminRate(req.params.id, patch, req.user.id, String(body.reason || '').trim())
+    res.json(adminRateShape(updated, settings))
+  } catch (error) {
+    console.error('Admin rate update failed:', error.message)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// GET /api/admin/settings/per-diem-billing
+router.get('/settings/per-diem-billing', async (req, res) => {
+  try {
+    res.json(await getBillingSettings())
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// PUT /api/admin/settings/per-diem-billing
+// Bill rates are computed on read, so a markup change takes effect everywhere
+// immediately -- there is no backfill step.
+router.put('/settings/per-diem-billing', async (req, res) => {
+  try {
+    const check = validateBillingSettings(req.body || {})
+    if (!check.valid) return res.status(400).json({ error: check.errors.join('; ') })
+
+    const { data: existing } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', SETTINGS_KEY)
+      .maybeSingle()
+
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert(
+        { key: SETTINGS_KEY, value: check.value, updated_by: req.user.id, updated_at: now },
+        { onConflict: 'key' }
+      )
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    await supabase.from('app_settings_history').insert({
+      key: SETTINGS_KEY,
+      old_value: existing?.value || null,
+      new_value: check.value,
+      changed_by: req.user.id,
+      note: String(req.body?.note || '').trim()
+    })
+
+    invalidateBillingSettingsCache()
+    res.json(check.value)
+  } catch (error) {
+    console.error('Billing settings update failed:', error.message)
+    res.status(500).json({ error: error.message })
+  }
 })
 
 // PUT /api/admin/nurses/:id/status
