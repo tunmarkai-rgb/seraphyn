@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -9,7 +9,6 @@ export default function Jobs() {
   const { user, profile } = useAuth()
   const navigate = useNavigate()
   const [jobs, setJobs] = useState([])
-  const [filtered, setFiltered] = useState([])
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState(null)
   const [appliedIds, setAppliedIds] = useState(new Set())
@@ -23,51 +22,56 @@ export default function Jobs() {
     specialty: '', state: '', shift_type: '', pay_min: '', pay_max: ''
   })
 
-  useEffect(() => {
-    loadJobs()
-    if (user && profile?.role === 'nurse') loadNurseProfile()
-  }, [user, profile])
-
-  useEffect(() => {
-    applyFilters()
-  }, [jobs, filters])
-
-  async function loadJobs() {
-    setLoading(true)
-    const { data } = await supabase
-      .from('jobs')
-      .select('*, employer_profiles(org_name, city, state)')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-    setJobs(data || [])
-    setLoading(false)
-  }
-
-  async function loadNurseProfile() {
+  const loadNurseProfile = useCallback(async function loadNurseProfile(userId) {
     const { data: np } = await supabase
       .from('nurse_profiles')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
-    if (np) {
-      setNurseProfileId(np.id)
-      const { data: apps } = await supabase
-        .from('applications')
-        .select('job_id')
-        .eq('nurse_id', np.id)
-      setAppliedIds(new Set((apps || []).map(a => a.job_id)))
-    }
-  }
+    if (!np) return null
+    const { data: apps } = await supabase
+      .from('applications')
+      .select('job_id')
+      .eq('nurse_id', np.id)
+    return { id: np.id, appliedIds: new Set((apps || []).map(a => a.job_id)) }
+  }, [])
 
-  function applyFilters() {
-    let result = [...jobs]
+  const filtered = useMemo(() => {
+    let result = jobs
     if (filters.specialty) result = result.filter(j => j.specialty === filters.specialty)
     if (filters.state) result = result.filter(j => j.state === filters.state)
     if (filters.shift_type) result = result.filter(j => j.shift_type === filters.shift_type)
     if (filters.pay_min) result = result.filter(j => j.pay_rate && j.pay_rate >= parseFloat(filters.pay_min))
     if (filters.pay_max) result = result.filter(j => j.pay_rate && j.pay_rate <= parseFloat(filters.pay_max))
-    setFiltered(result)
-  }
+    return result
+  }, [filters, jobs])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('jobs')
+        .select('*, employer_profiles(org_name, city, state)')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      setJobs(data || [])
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!user || profile?.role !== 'nurse') return undefined
+    let cancelled = false
+    ;(async () => {
+      const result = await loadNurseProfile(user.id)
+      if (cancelled || !result) return
+      setNurseProfileId(result.id)
+      setAppliedIds(result.appliedIds)
+    })()
+    return () => { cancelled = true }
+  }, [user, profile, loadNurseProfile])
 
   function handleFilter(e) {
     setFilters({ ...filters, [e.target.name]: e.target.value })
@@ -186,7 +190,7 @@ export default function Jobs() {
               <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>Loading jobs...</div>
             ) : filtered.length === 0 ? (
               <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '60px', textAlign: 'center' }}>
-                <div style={{ fontSize: '36px', marginBottom: '16px' }}>🔍</div>
+                <div style={{ fontSize: '36px', marginBottom: '16px' }}>🔍</div>
                 <p style={{ fontSize: '16px', color: 'var(--text-muted)', marginBottom: '12px' }}>No jobs match your filters.</p>
                 <button onClick={clearFilters} style={{ padding: '9px 20px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
                   Clear Filters
@@ -206,7 +210,7 @@ export default function Jobs() {
                             {job.title}
                           </h3>
                           <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                            {job.employer_profiles?.org_name} · 📍 {job.city}, {job.state}
+                            {job.employer_profiles?.org_name} · 📍 {job.city}, {job.state}
                           </p>
                         </div>
                         <div style={{ textAlign: 'right' }}>

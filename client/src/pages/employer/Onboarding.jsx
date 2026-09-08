@@ -625,9 +625,11 @@ export default function EmployerOnboarding() {
                           <a
                             href={signedRecord?.id ? undefined : `#agreement-${agreement.documentType}`}
                             onClick={(event) => {
+                              event.preventDefault()
                               if (signedRecord?.id) {
-                                event.preventDefault()
                                 downloadContract(signedRecord.id)
+                              } else {
+                                openAgreement(agreement)
                               }
                             }}
                             style={{ padding: '8px 14px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', background: 'transparent', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}

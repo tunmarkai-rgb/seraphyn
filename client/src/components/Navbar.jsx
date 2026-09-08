@@ -31,9 +31,13 @@ export default function Navbar({ transparent = false }) {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  useEffect(() => {
+  // Collapse the mobile menu on navigation. Done during render rather than in an
+  // effect so it also covers browser back/forward, which fires no link onClick.
+  const [menuPath, setMenuPath] = useState(location.pathname)
+  if (menuPath !== location.pathname) {
+    setMenuPath(location.pathname)
     setMenuOpen(false)
-  }, [location.pathname])
+  }
 
   const role = profile?.role
   const heroMode = transparent && !scrolled
@@ -107,7 +111,7 @@ export default function Navbar({ transparent = false }) {
           transition: 'all 0.3s',
         }}
       >
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0 }}>
+        <Link to="/" onClick={() => setMenuOpen(false)} style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0 }}>
           <BrandLogo tone={tone} size={30} showTagline={!heroMode} />
         </Link>
 
@@ -118,6 +122,7 @@ export default function Navbar({ transparent = false }) {
               <Link
                 key={item.href}
                 to={item.href}
+                onClick={() => setMenuOpen(false)}
                 style={{
                   ...baseLinkStyle,
                   color: active ? 'var(--warm-gold)' : linkColor,

@@ -260,7 +260,7 @@ export default function HomePage() {
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', marginBottom: '40px' }} className="cards-grid">
-            {jobs.map((job, i) => (
+            {jobs.map((job) => (
               <div
                 key={job.id || `${job.org}-${job.title}`}
                 style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '8px', padding: '28px', transition: 'all 0.3s', cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
