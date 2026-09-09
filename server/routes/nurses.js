@@ -23,6 +23,7 @@ const {
 } = require('../lib/nurse-requests')
 const { notifyAdmins } = require('../lib/notifications')
 const { employerHasFullAccess } = require('../lib/employer-access')
+const { extractDocxText, isDocx } = require('../lib/docx-text')
 const upload = multer({ storage: multer.memoryStorage() })
 
 // Columns a nurse (or admin) may write through PUT /api/nurses/:id. An
@@ -278,6 +279,36 @@ router.post('/self/files/:kind', requireSessionUser, upload.single('file'), asyn
       return res.status(500).json({ error: uploadError.message })
     }
 
+    // The resume parser reads pdf/rtf/txt only -- n8n's Extract from File node
+    // has no DOCX operation -- so a .docx resume would upload fine and then be
+    // silently skipped. Write a plain-text sidecar next to it for the parser to
+    // consume, and leave resume_url pointing at the original so the nurse and
+    // employers still download the real document.
+    let textSidecarPath = null
+    if (kind === 'resume' && isDocx(req.file.originalname)) {
+      try {
+        const text = extractDocxText(req.file.buffer)
+        if (text.trim()) {
+          const sidecar = `${filePath}.txt`
+          const { error: sidecarError } = await supabase.storage.from(bucket).upload(
+            sidecar,
+            Buffer.from(text, 'utf8'),
+            // Supabase matches the bucket allowlist on the exact header, so no charset.
+            { contentType: 'text/plain', upsert: true }
+          )
+          if (sidecarError) {
+            console.error('DOCX sidecar upload failed:', sidecarError.message)
+          } else {
+            textSidecarPath = sidecar
+          }
+        }
+      } catch (docxError) {
+        // A malformed .docx must not fail the upload; the nurse still gets
+        // their file stored, it simply will not be auto-parsed.
+        console.error('DOCX text extraction failed:', docxError.message)
+      }
+    }
+
     const now = new Date().toISOString()
     const { data: updatedProfile, error: updateError } = await supabase
       .from('nurse_profiles')
@@ -296,6 +327,7 @@ router.post('/self/files/:kind', requireSessionUser, upload.single('file'), asyn
     const downloadUrl = await createPrivateFileUrl(bucket, filePath)
     res.json({
       filePath,
+      textSidecarPath,
       downloadUrl,
       profile: updatedProfile
     })

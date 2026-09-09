@@ -566,8 +566,11 @@ export default function NurseProfile() {
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {[
-                { label: 'Resume / CV', ref: resumeRef, url: resumeUrl, uploading: uploadingResume, onChange: handleResumeUpload, bucket: 'resumes' },
-                { label: 'Nursing License Copy', ref: licenseRef, url: licenseUrl, uploading: uploadingLicense, onChange: handleLicenseUpload, bucket: 'licenses' },
+                // Resume accept is narrower than the license one: only these
+                // formats can be read by the resume parser. A .doc or a photo
+                // uploads fine and is then silently never parsed.
+                { label: 'Resume / CV', ref: resumeRef, url: resumeUrl, uploading: uploadingResume, onChange: handleResumeUpload, bucket: 'resumes', accept: '.pdf,.docx,.rtf,.txt', hint: 'PDF, DOCX, RTF or TXT' },
+                { label: 'Nursing License Copy', ref: licenseRef, url: licenseUrl, uploading: uploadingLicense, onChange: handleLicenseUpload, bucket: 'licenses', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png', hint: 'PDF or a photo/scan' },
               ].map(doc => (
                 <div key={doc.label} style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '4px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
@@ -576,11 +579,11 @@ export default function NurseProfile() {
                       {doc.url ? (
                         <a href={doc.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--sky-blue)' }}>View uploaded file ↗</a>
                       ) : (
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No file uploaded yet</p>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No file uploaded yet &middot; {doc.hint}</p>
                       )}
                     </div>
                     <div>
-                      <input type="file" ref={doc.ref} onChange={doc.onChange} accept=".pdf,.doc,.docx,.jpg,.png" style={{ display: 'none' }} />
+                      <input type="file" ref={doc.ref} onChange={doc.onChange} accept={doc.accept} style={{ display: 'none' }} />
                       <button type="button" onClick={() => doc.ref.current.click()} disabled={doc.uploading}
                         style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', background: 'transparent', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '500', cursor: 'pointer' }}>
                         {doc.uploading ? 'Uploading...' : doc.url ? 'Replace' : 'Upload'}
