@@ -191,27 +191,28 @@ n8n runs on the same DigitalOcean droplet as the portal API, so its memory
 budget is shared with production. These settings keep an execution from taking
 the container down. Apply on the n8n service, then `docker compose up -d`.
 
+**Applied 2026-09-09** to `/opt/seraphyn-n8n/docker-compose.yml` (backup kept
+alongside as `docker-compose.yml.bak-<timestamp>`):
+
 ```yaml
-environment:
-  # Keep binary payloads off the V8 heap - the single biggest win.
-  - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
-
-  # Stop retaining full execution payloads. Successes keep metadata only;
-  # errors keep data so failures stay debuggable.
-  - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
-  - EXECUTIONS_DATA_SAVE_ON_ERROR=all
-  - EXECUTIONS_DATA_SAVE_ON_PROGRESS=false
-  - EXECUTIONS_DATA_PRUNE=true
-  - EXECUTIONS_DATA_MAX_AGE=168          # hours
-
-  # One execution at a time. Two concurrent parses is what turns a tight
-  # memory budget into a container restart.
-  - N8N_CONCURRENCY_PRODUCTION_LIMIT=1
-
-  # Cap the heap so Node garbage-collects instead of being OOM-killed.
-  # Set to roughly half the container's memory limit.
-  - NODE_OPTIONS=--max-old-space-size=1536
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_PROGRESS=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168          # hours
+      - N8N_CONCURRENCY_PRODUCTION_LIMIT=1
+      - NODE_OPTIONS=--max-old-space-size=768
 ```
+
+`EXECUTIONS_DATA_SAVE_ON_SUCCESS=none` is the largest storage saver but is
+deliberately **not** set yet: successful-run payloads are what make failures
+diagnosable, and the parser still needs validating against a real nurse resume.
+Add it after that.
+
+Sizing: the droplet is 2GB and n8n is the only container, but PM2 (portal API)
+and Caddy run outside Docker on the same host, so the heap cap is 768MB rather
+than half of RAM. n8n idles around 410-440MB. Re-tune `--max-old-space-size` if
+the droplet is resized again.
 
 Symptom to recognise: an execution ends with status `crashed` and the message
 "Workflow did not finish, possible out-of-memory issue", n8n loses the real node
