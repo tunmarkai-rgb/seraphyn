@@ -28,8 +28,9 @@ Current implementation note:
 Current production workflow state:
 - `Seraphyn - Portal Events Inbound` is active in production with workflow ID `JBhroT3TwEIrXPwj`
 - `Seraphyn - Resume Parser` is workflow ID `1uJ9q9dgaYSqczjZ`, model Claude Sonnet 5 (`claude-sonnet-5`)
-- the resume parser is inactive because the run exhausts memory on the current droplet, not because of the key: the Anthropic credential is wired and the run reaches the agent node before crashing
-- the current blocker for live parsing validation is LLM credit, not missing workflow design
+- the resume parser is active and verified end to end against a real 2-page PDF (~2.6K input / 215 output tokens per resume)
+- it calls the Messages API via a plain HTTP Request node with structured outputs; the LangChain AI Agent, chat-model and output-parser nodes were removed after the agent runtime OOM-killed the container on a 7KB file
+- remaining validation gap: the only real PDF in the `resumes` bucket is not a nursing resume, so field-extraction quality is proven against sample nurse text but not yet against a genuine nurse resume file
 
 ---
 
@@ -181,6 +182,42 @@ N8N_WEBHOOK_SECRET=shared_secret
 
 Portal note:
 - `server/lib/portal-events.js` now dispatches milestone events to n8n and can also send the same events to GHL workflow webhook URLs from the portal backend.
+
+---
+
+## Runtime Hardening (docker-compose)
+
+n8n runs on the same DigitalOcean droplet as the portal API, so its memory
+budget is shared with production. These settings keep an execution from taking
+the container down. Apply on the n8n service, then `docker compose up -d`.
+
+```yaml
+environment:
+  # Keep binary payloads off the V8 heap - the single biggest win.
+  - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+
+  # Stop retaining full execution payloads. Successes keep metadata only;
+  # errors keep data so failures stay debuggable.
+  - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+  - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+  - EXECUTIONS_DATA_SAVE_ON_PROGRESS=false
+  - EXECUTIONS_DATA_PRUNE=true
+  - EXECUTIONS_DATA_MAX_AGE=168          # hours
+
+  # One execution at a time. Two concurrent parses is what turns a tight
+  # memory budget into a container restart.
+  - N8N_CONCURRENCY_PRODUCTION_LIMIT=1
+
+  # Cap the heap so Node garbage-collects instead of being OOM-killed.
+  # Set to roughly half the container's memory limit.
+  - NODE_OPTIONS=--max-old-space-size=1536
+```
+
+Symptom to recognise: an execution ends with status `crashed` and the message
+"Workflow did not finish, possible out-of-memory issue", n8n loses the real node
+outputs and returns `isArtificialRecoveredEventItem` placeholders, and Caddy
+serves 502 on `n8n.seraphyncare.com` until Docker restarts the container. The
+portal API is unaffected only by luck - it shares the box.
 
 ---
 
