@@ -214,6 +214,36 @@ and Caddy run outside Docker on the same host, so the heap cap is 768MB rather
 than half of RAM. n8n idles around 410-440MB. Re-tune `--max-old-space-size` if
 the droplet is resized again.
 
+### Container memory limit
+
+Also on the n8n service:
+
+```yaml
+    mem_limit: 1200m
+    memswap_limit: 1800m
+```
+
+Without a limit the kernel's OOM reaper picks the victim under pressure, and it
+could pick the PM2 portal API rather than n8n. A container limit guarantees
+Docker kills only n8n. 1200m sits above the 768m heap cap plus native overhead;
+`memswap_limit` lets it lean on ~600MB of swap first, so the failure mode is
+degraded rather than dead.
+
+### Swap
+
+The droplet shipped with **zero swap**, which is what made a memory spike an
+instant kill rather than a slowdown. Added 2026-09-09:
+
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile
+mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab   # persist across reboots
+sysctl -w vm.swappiness=10                        # cushion, not routine paging
+```
+
+`vm.swappiness=10` is persisted in `/etc/sysctl.conf`. Swap sat at 0B used
+after a full parse, so this is genuine headroom, not a crutch.
+
 Symptom to recognise: an execution ends with status `crashed` and the message
 "Workflow did not finish, possible out-of-memory issue", n8n loses the real node
 outputs and returns `isArtificialRecoveredEventItem` placeholders, and Caddy
