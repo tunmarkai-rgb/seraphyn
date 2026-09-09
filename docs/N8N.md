@@ -30,7 +30,9 @@ Current production workflow state:
 - `Seraphyn - Resume Parser` is workflow ID `1uJ9q9dgaYSqczjZ`, model Claude Sonnet 5 (`claude-sonnet-5`)
 - the resume parser is active and verified end to end against a real 2-page PDF (~2.6K input / 215 output tokens per resume)
 - it calls the Messages API via a plain HTTP Request node with structured outputs; the LangChain AI Agent, chat-model and output-parser nodes were removed after the agent runtime OOM-killed the container on a 7KB file
-- remaining validation gap: the only real PDF in the `resumes` bucket is not a nursing resume, so field-extraction quality is proven against sample nurse text but not yet against a genuine nurse resume file
+- field extraction is verified against a realistic nurse resume PDF: name, email, phone, licence number/state, 7 years experience, five certifications and nine skills all extracted, and the specialty normalised to the canonical `ICU / Critical Care`
+- **`.docx` resumes are silently skipped.** The parser handles `pdf`, `rtf` and `txt` only (n8n's Extract from File node has no DOCX operation), but the nurse profile upload accepts `.pdf,.doc,.docx,.jpg,.png`. At least one live nurse already has a `.docx` resume that will never be parsed. Either restrict the upload accept list to PDF, convert on upload, or add a DOCX extraction path
+- `availability` and `shift_preference` are enum-backed columns, so Build Profile Update maps Claude's free text (`"immediate"`, `"nights (7p-7a)"`) to canonical values and **skips the write when it cannot map**. The raw text is still kept in `ai_parsed_data`. Test the negative case when editing those mappings: `not available` contains `available`, so the negative branch must be checked first
 
 ---
 
