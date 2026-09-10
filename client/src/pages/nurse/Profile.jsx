@@ -569,7 +569,7 @@ export default function NurseProfile() {
                 // Resume accept is narrower than the license one: only these
                 // formats can be read by the resume parser. A .doc or a photo
                 // uploads fine and is then silently never parsed.
-                { label: 'Resume / CV', ref: resumeRef, url: resumeUrl, uploading: uploadingResume, onChange: handleResumeUpload, bucket: 'resumes', accept: '.pdf,.docx,.rtf,.txt', hint: 'PDF, DOCX, RTF or TXT' },
+                { label: 'Resume / CV', ref: resumeRef, url: resumeUrl, uploading: uploadingResume, onChange: handleResumeUpload, bucket: 'resumes', accept: '.pdf,.docx,.doc,.rtf,.txt,.png,.jpg,.jpeg', hint: 'PDF, Word, RTF, TXT or a clear photo' },
                 { label: 'Nursing License Copy', ref: licenseRef, url: licenseUrl, uploading: uploadingLicense, onChange: handleLicenseUpload, bucket: 'licenses', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png', hint: 'PDF or a photo/scan' },
               ].map(doc => (
                 <div key={doc.label} style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '4px' }}>

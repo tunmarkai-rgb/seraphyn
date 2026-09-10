@@ -24,6 +24,7 @@ const {
 const { notifyAdmins } = require('../lib/notifications')
 const { employerHasFullAccess } = require('../lib/employer-access')
 const { extractDocxText, isDocx } = require('../lib/docx-text')
+const { extractDocText, isDoc } = require('../lib/doc-text')
 const upload = multer({ storage: multer.memoryStorage() })
 
 // Columns a nurse (or admin) may write through PUT /api/nurses/:id. An
@@ -280,32 +281,41 @@ router.post('/self/files/:kind', requireSessionUser, upload.single('file'), asyn
     }
 
     // The resume parser reads pdf/rtf/txt only -- n8n's Extract from File node
-    // has no DOCX operation -- so a .docx resume would upload fine and then be
-    // silently skipped. Write a plain-text sidecar next to it for the parser to
-    // consume, and leave resume_url pointing at the original so the nurse and
-    // employers still download the real document.
+    // has no Word operation -- so a .doc or .docx resume would upload fine and
+    // then be silently skipped. Write a plain-text sidecar next to it for the
+    // parser to consume, and leave resume_url pointing at the original so the
+    // nurse and employers still download the real document.
+    //
+    // Extraction failure is never fatal: the file is still stored, it simply
+    // does not get parsed. That matters most for .doc, where a low-confidence
+    // extraction throws by design rather than writing guesses to a profile.
     let textSidecarPath = null
-    if (kind === 'resume' && isDocx(req.file.originalname)) {
-      try {
-        const text = extractDocxText(req.file.buffer)
-        if (text.trim()) {
-          const sidecar = `${filePath}.txt`
-          const { error: sidecarError } = await supabase.storage.from(bucket).upload(
-            sidecar,
-            Buffer.from(text, 'utf8'),
-            // Supabase matches the bucket allowlist on the exact header, so no charset.
-            { contentType: 'text/plain', upsert: true }
-          )
-          if (sidecarError) {
-            console.error('DOCX sidecar upload failed:', sidecarError.message)
-          } else {
-            textSidecarPath = sidecar
+    if (kind === 'resume') {
+      const name = req.file.originalname
+      const extractor = isDocx(name) ? { label: 'DOCX', run: extractDocxText }
+        : isDoc(name) ? { label: 'DOC', run: extractDocText }
+        : null
+
+      if (extractor) {
+        try {
+          const text = extractor.run(req.file.buffer)
+          if (text.trim()) {
+            const sidecar = `${filePath}.txt`
+            const { error: sidecarError } = await supabase.storage.from(bucket).upload(
+              sidecar,
+              Buffer.from(text, 'utf8'),
+              // Supabase matches the bucket allowlist on the exact header, so no charset.
+              { contentType: 'text/plain', upsert: true }
+            )
+            if (sidecarError) {
+              console.error(`${extractor.label} sidecar upload failed:`, sidecarError.message)
+            } else {
+              textSidecarPath = sidecar
+            }
           }
+        } catch (extractError) {
+          console.error(`${extractor.label} text extraction failed:`, extractError.message)
         }
-      } catch (docxError) {
-        // A malformed .docx must not fail the upload; the nurse still gets
-        // their file stored, it simply will not be auto-parsed.
-        console.error('DOCX text extraction failed:', docxError.message)
       }
     }
 
