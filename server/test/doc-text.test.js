@@ -135,6 +135,31 @@ test('confidence scores prose above noise', () => {
   assert.equal(extractionConfidence('too short'), 0)
 })
 
+// The synthetic containers above cover the CFB walk, but only real Word output
+// proves the reader survives what Word actually writes. These two fixtures were
+// produced by Word 16 saving as "Word 97-2003 Document".
+const fs = require('node:fs')
+const FIXTURES = path.resolve(__dirname, 'fixtures')
+
+test('reads a resume saved by real Word as .doc', () => {
+  const text = extractDocText(fs.readFileSync(path.join(FIXTURES, 'real-word97.doc')))
+  assert.match(text, /Priya Raman, RN/)
+  assert.match(text, /priya\.raman@example\.com/)
+  assert.match(text, /95511234/, 'licence number lost')
+  assert.match(text, /TNCC/)
+  assert.ok(extractionConfidence(text) > 0.8, 'real Word output scored low')
+})
+
+test('reads headings and table cells from real Word output', () => {
+  // Resumes are often laid out in tables; cell text lives in ordinary
+  // paragraphs, and the heading above the table must survive too.
+  const text = extractDocText(fs.readFileSync(path.join(FIXTURES, 'real-word97-table.doc')))
+  assert.match(text, /Marcus Bell, BSN, RN/, 'heading before the table was lost')
+  assert.match(text, /marcus\.bell@example\.com/)
+  assert.match(text, /60112233/)
+  assert.match(text, /Operating Room/)
+})
+
 test('isDoc and looksLikeDoc discriminate correctly', () => {
   assert.equal(isDoc('resume.doc'), true)
   assert.equal(isDoc('RESUME.DOC'), true)

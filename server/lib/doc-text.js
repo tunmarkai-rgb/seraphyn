@@ -4,17 +4,18 @@
 // reader cannot touch it. This walks the CFB structure far enough to read the
 // WordDocument stream and pull body text out of it.
 //
-// THIS IS BEST EFFORT AND IS NOT VERIFIED AGAINST REAL WORD OUTPUT. The unit
-// tests build synthetic containers, which exercise the CFB walk and the FIB
-// read but not the quirks of documents Word actually writes -- particularly
-// fast-saved ("complex") files, which scatter text into pieces indexed by a
-// piece table in the Table stream.
+// Verified against genuine Word 16 output saved as "Word 97-2003 Document":
+// see the fixtures under test/fixtures. Headings, body paragraphs and table
+// cells all come through, with cp1252 punctuation decoded.
 //
-// Because of that, every result is scored by extractionConfidence() and a low
-// score throws. Callers must treat a throw as "not extractable" and leave the
-// nurse's profile alone: a wrong extraction here would be written to their
-// record as fact, which is worse than no extraction at all. The upload UI
-// steers nurses to PDF or DOCX for this reason.
+// The remaining gap is fast-saved ("complex") documents, which scatter text
+// into pieces indexed by a piece table in the Table stream. Those fall back to
+// scanning from fcMin, which recovers many but not all of them.
+//
+// Every result is therefore scored by extractionConfidence() and a low score
+// throws. Callers must treat a throw as "not extractable" and leave the nurse's
+// profile alone: a wrong extraction would be written to their record as fact,
+// which is worse than no extraction at all.
 
 const SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
 const FREE_SECT = 0xffffffff
