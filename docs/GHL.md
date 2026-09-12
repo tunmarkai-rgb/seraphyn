@@ -142,7 +142,56 @@ Current live implementation notes:
 ### 3. Consulting Assessment Form
 (Embed ID: 7EP8moLgQXNVHQucSCEt)
 
-Fields: Full Name, Work Email, Facility Name, Turnover Rate (Dropdown), Agency Usage (Dropdown), Staffing Challenges (Multi-line Text)
+| # | Field | Type | Required |
+|---|---|---|---|
+| 1 | First Name | Text | No |
+| 2 | Last Name | Text | No |
+| 3 | Work Email | Email | Yes |
+| 4 | Your Facility Name | Text | Yes |
+| 5 | Agency Usage | Dropdown | Yes |
+| 6 | Nurses employed | Radio — `Under 50` / `50–150` / `150–400` / `400–1,000` / `Over 1,000` | Yes |
+| 7 | Turnover Rate | Radio — `Under 10%` / `10–20%` / `20–30%` / `30–40%` / `Over 40%` | Yes |
+| 8 | Staffing Challenges | Multi-line Text | No |
+| 9 | SMS consent | Checkbox | No |
+
+Field 6 (`Nurses employed`) is what makes the step 3 results figure real; before it existed
+the results page showed a hardcoded `$847,000` to everyone. It belongs **directly above**
+Turnover Rate, and both must stay Radio bands — step 3 maps band labels to midpoints and
+does not parse free numbers from these two fields.
+
+The earlier version of this list was wrong on two counts (it recorded a single "Full Name"
+and a Turnover Rate *dropdown*); it was corrected from the live rendered form on
+2026-09-10. Verify against the builder before trusting it again.
+
+**Step 2 → Step 3 redirect** is configured here, not in page code:
+Settings → On Submit → *Redirect to URL* →
+
+```
+https://consult.seraphyncare.com/results?n={{contact.approximately_how_many_nurses_do_you_employ}}&t={{contact.facility_turnover_rate}}
+```
+
+**GHL derives a custom field's key from its question text**, so the keys are long and not
+guessable. The full set on this form, read from its own definition on 2026-09-12:
+
+| Field | Merge key |
+|---|---|
+| Nurses employed | `contact.approximately_how_many_nurses_do_you_employ` |
+| Turnover Rate | `contact.facility_turnover_rate` |
+| Your Facility Name | `contact.your_facility_name_` (note the trailing underscore) |
+| Agency Usage | `contact.your_agency_usage` |
+| Staffing Challenges | `contact.staffing_challenges` |
+
+A wrong key is **silent**: GHL forwards the literal `{{...}}` text and step 3 falls back to
+the generic benchmark for every visitor. `{{nurses_employed}}` and `{{turnover_rate}}` were
+configured first and both were wrong — `turnover_rate` is only a substring of the real
+`facility_turnover_rate`. To read the keys for any form without guessing:
+
+```sh
+curl -s "https://api.leadconnectorhq.com/widget/form/<FORM_ID>" | grep -oE 'contact\.[a-z0-9_]+' | sort -u
+```
+
+Verify after any change by submitting the form and reading the address bar on `/results`:
+real band values mean it works, literal braces mean the key is wrong.
 
 ---
 
@@ -162,16 +211,48 @@ Fields: Full Name, Work Email, Facility Name, Turnover Rate (Dropdown), Agency U
 - **Step 2:** Employer form page with embedded Employer Lead Capture Form
 
 ### Funnel 3: Consulting Funnel
-- **Step 1 (Path: book):** "The Million Dollar Nurse" book page
-  - Book mockup image: https://assets.cdn.filesafe.space/B508soKQSaXweoYGJGaF/media/69dbd3db982fd67a35987b0e.jpg
-  - Primary CTA: route to the assessment page
-  - Secondary CTA: strategy call only if Kundayi explicitly wants it
-  - Default: no payment CTA while billing stays offline
-  - Placeholder: YOUR_ASSESSMENT_URL_HERE (Step 2 URL)
-- **Step 2 (Path: assessment):** Assessment form page with embedded Consulting Assessment Form
-- **Step 3 (Path: results):** Results page ("Your organization is losing $847,000")
+
+> **Page source is version-controlled** in [ghl-funnels/consulting/](ghl-funnels/consulting/)
+> — `step-1-book.html`, `step-2-assessment.html`, `step-3-results.html`. Keep each file
+> byte-identical to its GHL Custom Code element; edit the file, then paste it across.
+
+All three steps are linked with **plain `<a href>` anchors to absolute URLs** plus a shared
+3-node step tracker whose completed nodes are anchors. Do not reintroduce
+`javascript:history.back()`: it is inert on cold arrival (most funnel traffic has no history
+entry), can eject the visitor to an external referrer, and `javascript:` hrefs are blocked
+under a strict CSP.
+
+- **Step 1 (Path: book):** "THE NURSE RETENTION BLUEPRINT" book page
+  - Book mockup image: https://assets.cdn.filesafe.space/B508soKQSaXweoYGJGaF/media/6aa26f778d826740050dd3ac.jpg
+    (800x1200 JPEG, 114 KB). The first upload of this cover was a 2.3 MB 1024x1536 PNG —
+    the heaviest asset on the primary landing page, above the fold, for an image displayed
+    at 380px wide. It was recompressed before launch. **GHL has no replace-in-place for
+    media**, so every re-upload gets a new URL and the page code must be edited to match.
+  - Primary CTA: **Amazon** → https://a.co/d/0giV2nFK (`target="_blank" rel="noopener"`)
+  - Secondary CTA: the assessment page
+  - **No payment CTA and no price shown.** Payments stay offline (ground rule 1) and the
+    book sells on Amazon, so a price here would only go stale. The former `$47` "instant
+    digital download" block was replaced with credibility content.
+- **Step 2 (Path: assessment):** Assessment form page with embedded Consulting Assessment
+  Form (`7EP8moLgQXNVHQucSCEt`). Back → step 1. Forward → step 3 via the **form's own
+  redirect setting**, which must pass `?n=` and `?t=`; see the form section above.
+- **Step 3 (Path: results):** Results page — the annual cost figure is **computed**, not
+  hardcoded
+  - `?n=<headcount band>&t=<turnover band>` are mapped to midpoints and multiplied by an
+    `$88,000` per-turnover constant, rounded to the nearest `$1,000`
+  - **Cold visits fall back to a generic benchmark** (`$88,000` per nurse who leaves) and
+    drop every personalised claim. This path is common — bookmarks, shared links, browser
+    back, ads pointed straight at `/results` — so it must never show a specific figure
+    presented as the visitor's own. The page previously showed a hardcoded `$847,000` to
+    everybody while claiming it came from their reported rate
   - Strategy Call Calendar URL: https://api.leadconnectorhq.com/widget/booking/uFMSW7I0eMVzSlSpxlJq
-  - Book Page URL: YOUR_BOOK_PAGE_URL_HERE
+    — **must stay a GHL calendar.** ELS-04 triggers on a booking on this calendar; an
+    external scheduler (Calendly was proposed on 2026-09-10 and rejected) means no
+    `strategy-call-booked` tag, no Stage 5 move, no confirmation email, no internal alert —
+    and because that tag is a kill condition for ELS-01/ELS-02, a lead who had just booked
+    would keep receiving emails asking them to book. Revisiting an external scheduler
+    requires a webhook → n8n → GHL-API bridge, not a link swap
+  - Book Page URL: https://consult.seraphyncare.com/book
 
 ---
 
@@ -272,9 +353,13 @@ Automation sequences live, calendar booking live, GHL Documents contract flow li
 |---|---|---|
 | Staffing Landing (Step 1) | `YOUR_DEMO_CALENDAR_URL_HERE` | https://api.leadconnectorhq.com/widget/booking/JRNktDpCFjwEiAusNjGU |
 | Staffing Landing (Step 1) | `YOUR_STAFFING_FORM_STEP2_URL_HERE` | Staffing form page URL (pull from GHL funnel) |
-| Consulting Book (Step 1) | `YOUR_ASSESSMENT_URL_HERE` | Assessment page URL (pull from GHL funnel) |
-| Consulting Results (Step 3) | `YOUR_STRATEGY_CALL_CALENDAR_URL_HERE` | https://api.leadconnectorhq.com/widget/booking/uFMSW7I0eMVzSlSpxlJq |
-| Consulting Results (Step 3) | `YOUR_BOOK_PAGE_URL_HERE` | Book page URL (pull from GHL funnel) |
+
+All three **consulting** placeholders were resolved on 2026-09-10 and the pages committed to
+[ghl-funnels/consulting/](ghl-funnels/consulting/). They had been live in production the
+whole time, so the step 1 → step 2 link and both step 3 CTAs were dead. When updating the
+remaining funnels, check for live `YOUR_*_HERE` strings in the page source first rather than
+assuming the table is current — it under-reported by one (`YOUR_PAYMENT_LINK_HERE` on the
+consulting book page was never listed here).
 
 ---
 
