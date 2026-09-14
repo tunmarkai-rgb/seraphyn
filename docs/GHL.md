@@ -116,6 +116,20 @@ All original pipelines and tags were deleted and rebuilt with the new spec below
 
 **Routing:** → Nurse Pipeline Stage 1 (New Applicant) + fires Nurse Sequence + notifies admin
 
+Merge keys for the custom fields, read from the live form on 2026-09-13 (needed only if a
+redirect ever has to carry answers in the URL, as Funnel 3's does):
+
+| Field | Merge key |
+|---|---|
+| Nursing License State | `contact.nursing_license_state` |
+| Primary Specialty | `contact.primary_specialty` |
+| Years of Experience | `contact.whats_your_years_of_experience` |
+| Shift Preference | `contact.whats_your_shift_preference` |
+| Licensed in the US? | `contact.licensed_in_the_us` |
+
+Note the shift field's form input is `data-q="shift_preferences"` (plural) while its merge
+key is `...shift_preference` (singular) — do not assume the two match on any GHL form.
+
 Current live implementation notes:
 - Form submit redirects to `https://staffing.seraphyncare.com/nurse-signup`
 - The companion GHL workflow should call `POST https://api.seraphyncare.com/api/leads/nurse-prefill`
@@ -198,11 +212,27 @@ real band values mean it works, literal braces mean the key is wrong.
 ## Funnels (3)
 
 ### Funnel 1: Nurse Recruitment Funnel
+
+> **Page source is version-controlled** in [ghl-funnels/nurse/](ghl-funnels/nurse/) —
+> `step-1-nurse-signup.html`, `step-2-nurse-apply.html`. Keep each file byte-identical to
+> its GHL Custom Code element.
+
+Both steps are linked with **plain `<a href>` anchors to absolute URLs** plus a shared
+2-node step tracker whose completed node is an anchor. Do not reintroduce
+`javascript:history.back()` — see the note under Funnel 3 for why.
+
 - **Step 1 (Path: nurse-signup):** Landing page with hero image + CTA
   - Hero image: Black female nurse in modern hospital corridor
   - GHL media URL: https://assets.cdn.filesafe.space/B508soKQSaXweoYGJGaF/media/69db6878a4e6aa34cbf09c6c.jpg
-  - CTA button links to Step 2 URL (update in code)
-- **Step 2 (Path: nurse-apply):** Application form page with embedded Nurse Lead Capture Form
+    (784x1168 JPEG, 178 KB — already a sensible weight, unlike the consulting cover)
+  - CTA → `https://consult.seraphyncare.com/nurse-apply-page`
+- **Step 2 (Path: **`nurse-apply-page`**):** Application form page with the embedded Nurse
+  Lead Capture Form (`qxTojqt2g2mV99UGXqgy`). Back → step 1.
+  - **The live path is `nurse-apply-page`, not `nurse-apply`** as this doc previously said.
+  - On submit the form redirects to the **portal** at
+    `https://staffing.seraphyncare.com/nurse-signup`, and the companion workflow posts to
+    `/api/leads/nurse-prefill`. No query parameters are needed — unlike Funnel 3, the
+    prefill travels over the webhook, not the URL.
 
 ### Funnel 2: Staffing Funnel
 - **Step 1 (Path: hospital-signup):** Staffing landing page with 2 CTAs
