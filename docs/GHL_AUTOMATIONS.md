@@ -178,7 +178,7 @@ Implementation note:
 [5]  ACTION: Send SMS —
              "Hi {{contact.first_name}}, you're one step away from 
              accessing nursing opportunities near you. 
-             Create your free profile here: https://staffing.seraphyncare.com/nurse/signup
+             Create your free profile here: https://staffing.seraphyncare.com/signup?role=nurse
              Reply STOP to opt out."
 
 [6]  WAIT: 23 hours
@@ -192,7 +192,7 @@ Implementation note:
              Body: "We noticed you checked out the Seraphyn platform.
              Your profile takes less than 5 minutes and puts you 
              in front of facilities looking for your specialty.
-             [Create My Profile →](https://staffing.seraphyncare.com/nurse/signup)"
+             [Create My Profile →](https://staffing.seraphyncare.com/signup?role=nurse)"
 
 [9]  END
 ```

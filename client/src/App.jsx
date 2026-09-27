@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import BrandLogo from './components/BrandLogo'
 import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -9,8 +9,7 @@ const Login = lazy(() => import('./pages/Login'))
 const AuthConfirm = lazy(() => import('./pages/AuthConfirm'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
-const NurseSignup = lazy(() => import('./pages/NurseSignup'))
-const EmployerSignup = lazy(() => import('./pages/EmployerSignup'))
+const Signup = lazy(() => import('./pages/Signup'))
 const Jobs = lazy(() => import('./pages/Jobs'))
 const Nurses = lazy(() => import('./pages/Nurses'))
 const NurseDetail = lazy(() => import('./pages/NurseDetail'))
@@ -88,6 +87,14 @@ function HomeRoute() {
   return <HomePage />
 }
 
+// The old per-role signup URLs are still linked from GHL funnels and emails.
+function LegacySignupRedirect({ role }) {
+  const location = useLocation()
+  const params = new URLSearchParams(location.search)
+  params.set('role', role)
+  return <Navigate to={`/signup?${params.toString()}`} replace />
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -98,8 +105,9 @@ function App() {
           <Route path="/auth/confirm" element={<AuthConfirm />} />
           <Route path="/auth/reset-password" element={<ResetPassword />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/nurse-signup" element={<NurseSignup />} />
-          <Route path="/employer-signup" element={<EmployerSignup />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/nurse-signup" element={<LegacySignupRedirect role="nurse" />} />
+          <Route path="/employer-signup" element={<LegacySignupRedirect role="employer" />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/nurses" element={<Nurses />} />
           <Route path="/nurses/:id" element={<NurseDetail />} />

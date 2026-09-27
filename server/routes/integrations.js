@@ -2,50 +2,49 @@ const express = require('express')
 const router = express.Router()
 const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole } = require('../middleware/auth')
-const { syncEmployerContactById, syncNurseContactById } = require('../lib/ghl-sync')
+const { syncEmployerContactById, syncNurseContactById, syncContactForUser } = require('../lib/ghl-sync')
 const { dispatchPortalEvent } = require('../lib/portal-events')
 const { syncNurseCompletionByUserId } = require('../lib/nurse-completion')
 const { notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
-const { normalizeShiftPreference } = require('../lib/user-bootstrap')
+const { ensureEmployerProfileRow, ensureNurseProfileRow, ensurePublicUserForAuthUser } = require('../lib/user-bootstrap')
+const { claimLeadForAuthUser } = require('../lib/leads')
 
+const SIGNUP_ALERT_WINDOW_MS = 24 * 60 * 60 * 1000
+
+// Called by the signup page straight after supabase.auth.signUp, before the
+// user has a session. The body is untrusted, so the account is re-read from
+// Supabase Auth and must match on id, email and role, and be freshly created.
 router.post('/signup-alert', async (req, res) => {
-  const { userId, role, email, fullName, profile = {} } = req.body || {}
+  const { userId, role, email } = req.body || {}
 
   if (!userId || !role || !email || !['nurse', 'employer'].includes(role)) {
     return res.status(400).json({ error: 'userId, role, and email are required' })
   }
 
   try {
-    const now = new Date().toISOString()
+    const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId)
+    const authUser = authData?.user
+    const isFresh = authUser && Date.now() - new Date(authUser.created_at).getTime() < SIGNUP_ALERT_WINDOW_MS
 
-    await supabase
-      .from('users')
-      .upsert({
-        id: userId,
-        role,
-        status: 'pending',
-        full_name: fullName || '',
-        email,
-        updated_at: now,
-        created_at: now
-      }, { onConflict: 'id' })
+    if (
+      authError ||
+      !authUser ||
+      String(authUser.email || '').toLowerCase() !== String(email).toLowerCase() ||
+      authUser.user_metadata?.role !== role ||
+      !isFresh
+    ) {
+      return res.status(404).json({ error: 'Signup not found' })
+    }
+
+    await ensurePublicUserForAuthUser(authUser, role)
+    const metadata = authUser.user_metadata || {}
+    const fullName = metadata.full_name || [metadata.first_name, metadata.last_name].filter(Boolean).join(' ')
 
     if (role === 'nurse') {
-      const { data: nurseProfile } = await supabase
-        .from('nurse_profiles')
-        .upsert({
-          user_id: userId,
-          first_name: profile.first_name || '',
-          last_name: profile.last_name || '',
-          specialty: profile.specialty || '',
-          license_state: profile.license_state || '',
-          years_experience: profile.years_experience ?? null,
-          shift_preference: normalizeShiftPreference(profile.shift_preference || '', null),
-          updated_at: now,
-          created_at: now
-        }, { onConflict: 'user_id' })
-        .select('id, specialty')
-        .single()
+      const nurseProfile = await ensureNurseProfileRow(authUser.id, {
+        first_name: metadata.first_name || '',
+        last_name: metadata.last_name || ''
+      }, { fillEmptyOnly: true })
 
       await notifyAdmins({
         type: 'nurse.signup_pending',
@@ -53,10 +52,7 @@ router.post('/signup-alert', async (req, res) => {
         body: `${fullName || email} started a nurse signup.`,
         entityType: 'nurse_profile',
         entityId: nurseProfile?.id || null,
-        metadata: {
-          email,
-          specialty: nurseProfile?.specialty || profile.specialty || null
-        }
+        metadata: { email }
       })
 
       await notifyInternalInbox({
@@ -65,28 +61,20 @@ router.post('/signup-alert', async (req, res) => {
         body: `${fullName || email} started a nurse signup.`
       })
 
+      // Portal-first signups reach GHL now rather than only after confirmation.
+      void syncContactForUser(authUser.id, 'nurse')
+
       return res.json({ ok: true, role, nurseProfileId: nurseProfile?.id || null })
     }
 
-    const { data: employerProfile } = await supabase
-      .from('employer_profiles')
-      .upsert({
-        user_id: userId,
-        org_name: profile.org_name || '',
-        contact_name: profile.contact_name || fullName || '',
-        org_type: profile.org_type || '',
-        state: profile.state || '',
-        onboarding_stage: profile.onboarding_stage || 'profile',
-        updated_at: now,
-        created_at: now
-      }, { onConflict: 'user_id' })
-      .select('id, org_name')
-      .single()
+    const employerProfile = await ensureEmployerProfileRow(authUser.id, {
+      contact_name: fullName || ''
+    }, { fillEmptyOnly: true })
 
     await notifyAdmins({
       type: 'employer.signup_pending',
       title: 'New employer signup',
-      body: `${employerProfile?.org_name || fullName || email} started an employer signup.`,
+      body: `${fullName || email} started an employer signup.`,
       entityType: 'employer_profile',
       entityId: employerProfile?.id || null,
       metadata: { email }
@@ -95,45 +83,34 @@ router.post('/signup-alert', async (req, res) => {
     await notifyInternalInbox({
       subject: 'Seraphyn: new employer signup',
       title: 'New employer signup awaiting review',
-      body: `${employerProfile?.org_name || fullName || email} started an employer signup.`
+      body: `${fullName || email} started an employer signup.`
     })
+
+    void syncContactForUser(authUser.id, 'employer')
 
     return res.json({ ok: true, role, employerProfileId: employerProfile?.id || null })
   } catch (error) {
     console.error('Public signup alert failed:', error.message)
-    return res.status(500).json({ error: error.message || 'Failed to record signup' })
+    return res.status(500).json({ error: 'Failed to record signup' })
   }
 })
 
+// Called by /auth/confirm right after the email is confirmed, and by the
+// employer onboarding page. Applies any GHL lead for this email first, so the
+// contact pushed to GHL already carries the form answers.
 router.post('/ghl/sync-self', requireAuth, requireRole('nurse', 'employer'), async (req, res) => {
   try {
+    const leadClaim = await claimLeadForAuthUser(req.user, req.user.role)
+
     if (req.user.role === 'employer') {
-      const { data: employer } = await supabase
-        .from('employer_profiles')
-        .select('id')
-        .eq('user_id', req.user.id)
-        .single()
-
-      if (!employer?.id) {
-        return res.status(404).json({ error: 'Employer profile not found' })
-      }
-
+      const employer = await ensureEmployerProfileRow(req.user.id, {}, { fillEmptyOnly: true })
       const result = await syncEmployerContactById(employer.id)
-      return res.json({ role: 'employer', ...result })
+      return res.json({ role: 'employer', leadClaimed: Boolean(leadClaim), ...result })
     }
 
-    const { data: nurse } = await supabase
-      .from('nurse_profiles')
-      .select('id')
-      .eq('user_id', req.user.id)
-      .single()
-
-    if (!nurse?.id) {
-      return res.status(404).json({ error: 'Nurse profile not found' })
-    }
-
+    const nurse = await ensureNurseProfileRow(req.user.id, {}, { fillEmptyOnly: true })
     const result = await syncNurseContactById(nurse.id)
-    return res.json({ role: 'nurse', ...result })
+    return res.json({ role: 'nurse', leadClaimed: Boolean(leadClaim), ...result })
   } catch (error) {
     console.error('Self GHL sync failed:', error.response?.data || error.message)
     return res.status(502).json({
@@ -253,6 +230,9 @@ router.post('/events/self', requireAuth, requireRole('nurse', 'employer'), async
 router.post('/nurse/profile-completion', requireAuth, requireRole('nurse'), async (req, res) => {
   try {
     const result = await syncNurseCompletionByUserId(req.user.id)
+    // The profile page saves straight to Supabase and then calls this, so it
+    // is the one place a nurse profile edit is visible to the server.
+    void syncContactForUser(req.user.id, 'nurse')
     res.json(result)
   } catch (error) {
     console.error('Failed to sync nurse profile completion:', error.message)

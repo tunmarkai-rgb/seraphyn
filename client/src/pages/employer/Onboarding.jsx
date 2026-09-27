@@ -75,6 +75,8 @@ export default function EmployerOnboarding() {
   const [saving, setSaving] = useState(false)
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState('')
+  const [prefilledFromLead, setPrefilledFromLead] = useState(false)
+  const bootstrappedRef = useRef(false)
   const [syncingContact, setSyncingContact] = useState(false)
   const [signatureConsent, setSignatureConsent] = useState(false)
   const [signerName, setSignerName] = useState('')
@@ -143,6 +145,18 @@ export default function EmployerOnboarding() {
   }, [signerName, signerTitle])
 
   async function loadProfile() {
+    // Once per visit: creates the profile row if needed and applies the
+    // employer's GHL form answers, so Step 1 opens already filled in.
+    if (!bootstrappedRef.current) {
+      bootstrappedRef.current = true
+      try {
+        const bootstrap = await apiRequest('/api/employers/self/bootstrap', { method: 'POST' })
+        setPrefilledFromLead(Boolean(bootstrap?.prefilledFromLead))
+      } catch (bootstrapError) {
+        console.error('Employer bootstrap failed:', bootstrapError.message)
+      }
+    }
+
     const { data } = await supabase
       .from('employer_profiles')
       .select('*, contracts(*)')
@@ -510,6 +524,12 @@ export default function EmployerOnboarding() {
             </div>
           ))}
         </div>
+
+        {stage === 1 && prefilledFromLead && (
+          <div style={{ background: 'rgba(126,181,200,0.12)', border: '1px solid rgba(126,181,200,0.3)', borderRadius: '2px', padding: '12px 16px', marginBottom: '24px', fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>
+            We've filled in what you told us on our website. Check it over and complete the remaining fields.
+          </div>
+        )}
 
         {error && (
           <div style={{ background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '2px', padding: '12px 16px', marginBottom: '24px', fontSize: '13px', color: '#B43C3C' }}>

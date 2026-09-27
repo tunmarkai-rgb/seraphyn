@@ -1,28 +1,10 @@
 const { supabase } = require('../config/supabase')
+const { normalizeAvailability, normalizeShiftPreference } = require('./lead-normalize')
 
 function hasValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'string') return value.trim().length > 0
   return true
-}
-
-function normalizeShiftPreference(value, fallback = null) {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return fallback
-  if (raw === 'per diem') return 'Per Diem'
-  if (raw === 'contract travel') return 'Contract Travel'
-  if (raw === 'permanent') return 'Permanent'
-  return fallback
-}
-
-function normalizeAvailability(value, fallback = null) {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return fallback
-  if (raw === 'immediate' || raw === 'immediately' || raw === 'available now') return 'Immediate'
-  if (raw === '2 weeks') return '2 Weeks'
-  if (raw === '30 days' || raw === '1 month') return '30 Days'
-  if (raw === 'not available') return 'Not Available'
-  return fallback
 }
 
 async function getPublicUserById(userId) {
@@ -95,23 +77,49 @@ async function ensurePublicUserForAuthUser(authUser, roleOverride = '') {
   return data
 }
 
-async function ensureEmployerProfileRow(userId, seed = {}) {
-  const payload = {
-    user_id: userId,
-    org_name: seed.org_name || '',
-    org_type: seed.org_type || '',
-    contact_name: seed.contact_name || '',
-    contact_title: seed.contact_title || '',
-    city: seed.city || '',
-    state: seed.state || '',
-    bed_count: seed.bed_count ?? null,
-    description: seed.description || '',
-    onboarding_stage: seed.onboarding_stage || 'profile',
-    updated_at: new Date().toISOString()
-  }
+// Column defaults that mean "not chosen yet", so a fill-only seed may replace them.
+const PLACEHOLDER_VALUES = {
+  shift_preference: new Set(['any'])
+}
 
+function isEmptyColumn(column, value) {
+  if (!hasValue(value)) return true
+  if (Array.isArray(value)) return value.length === 0
+  return Boolean(PLACEHOLDER_VALUES[column]?.has(value))
+}
+
+// Two write modes:
+//   overwrite (default) -- a column present in the seed replaces the stored
+//     value; used when the user submits a form.
+//   fillEmptyOnly -- the seed only fills columns that are still empty; used for
+//     signup metadata and GHL lead prefill, which must never undo a user's edit.
+function mergeSeed(existing, seed, { fillEmptyOnly = false } = {}) {
+  const merged = { ...(existing || {}) }
+  for (const [column, value] of Object.entries(seed)) {
+    if (value === undefined) continue
+    if (fillEmptyOnly) {
+      if (isEmptyColumn(column, merged[column]) && !isEmptyColumn(column, value)) merged[column] = value
+    } else {
+      merged[column] = value
+    }
+  }
+  return merged
+}
+
+async function loadProfileRow(table, userId) {
   const { data, error } = await supabase
-    .from('employer_profiles')
+    .from(table)
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data || null
+}
+
+async function upsertProfileRow(table, payload) {
+  const { data, error } = await supabase
+    .from(table)
     .upsert(payload, { onConflict: 'user_id' })
     .select('*')
     .single()
@@ -120,47 +128,39 @@ async function ensureEmployerProfileRow(userId, seed = {}) {
   return data
 }
 
-async function ensureNurseProfileRow(userId, seed = {}) {
-  const { data: existing, error: existingError } = await supabase
-    .from('nurse_profiles')
-    .select('*')
-    .eq('user_id', userId)
-    .maybeSingle()
+async function ensureEmployerProfileRow(userId, seed = {}, options = {}) {
+  const existing = await loadProfileRow('employer_profiles', userId)
+  const merged = mergeSeed(existing, seed, options)
 
-  if (existingError) throw existingError
-
-  const payload = {
-    ...(existing || {}),
+  return upsertProfileRow('employer_profiles', {
+    ...merged,
     user_id: userId,
-    first_name: hasValue(seed.first_name) ? seed.first_name : (existing?.first_name || ''),
-    last_name: hasValue(seed.last_name) ? seed.last_name : (existing?.last_name || ''),
-    specialty: hasValue(seed.specialty) ? seed.specialty : (existing?.specialty || ''),
-    license_number: hasValue(seed.license_number) ? seed.license_number : (existing?.license_number || ''),
-    license_state: hasValue(seed.license_state) ? seed.license_state : (existing?.license_state || ''),
-    years_experience: hasValue(seed.years_experience) ? seed.years_experience : (existing?.years_experience ?? null),
-    availability: normalizeAvailability(
-      hasValue(seed.availability) ? seed.availability : null,
-      existing?.availability ?? null
-    ),
-    shift_preference: normalizeShiftPreference(
-      hasValue(seed.shift_preference) ? seed.shift_preference : null,
-      existing?.shift_preference ?? null
-    ),
-    bio: hasValue(seed.bio) ? seed.bio : (existing?.bio || ''),
-    certifications: Array.isArray(seed.certifications) && seed.certifications.length > 0
-      ? seed.certifications
-      : (existing?.certifications || []),
+    org_name: merged.org_name || '',
+    org_type: merged.org_type || '',
+    contact_name: merged.contact_name || '',
+    onboarding_stage: merged.onboarding_stage || 'profile',
     updated_at: new Date().toISOString()
+  })
+}
+
+async function ensureNurseProfileRow(userId, seed = {}, options = {}) {
+  const existing = await loadProfileRow('nurse_profiles', userId)
+  const normalizedSeed = { ...seed }
+  if ('shift_preference' in normalizedSeed) {
+    normalizedSeed.shift_preference = normalizeShiftPreference(normalizedSeed.shift_preference, undefined)
   }
+  if ('availability' in normalizedSeed) {
+    normalizedSeed.availability = normalizeAvailability(normalizedSeed.availability, undefined)
+  }
+  const merged = mergeSeed(existing, normalizedSeed, options)
 
-  const { data, error } = await supabase
-    .from('nurse_profiles')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select('*')
-    .single()
-
-  if (error) throw error
-  return data
+  return upsertProfileRow('nurse_profiles', {
+    ...merged,
+    user_id: userId,
+    first_name: merged.first_name || '',
+    last_name: merged.last_name || '',
+    updated_at: new Date().toISOString()
+  })
 }
 
 async function resolveRoleFromProfileTables(userId) {

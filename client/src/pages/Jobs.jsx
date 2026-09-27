@@ -244,7 +244,7 @@ export default function Jobs() {
                           </span>
                         ) : (
                           <button onClick={() => {
-                            if (!user) navigate('/nurse-signup')
+                            if (!user) navigate('/signup?role=nurse')
                             else if (profile?.role !== 'nurse') {
                               setNonNurseToast(true)
                               setTimeout(() => setNonNurseToast(false), 3000)

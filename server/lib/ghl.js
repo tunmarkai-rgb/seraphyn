@@ -94,6 +94,52 @@ async function upsertContact(contactData) {
   }
 }
 
+// PUT /contacts/:id targets one exact contact, unlike upsert, which matches by
+// email/phone and can land on a duplicate. Tags are deliberately not accepted
+// here: on this endpoint a tags array replaces every tag on the contact.
+async function updateContact(contactId, contactData) {
+  const client = getClient()
+  const { tags, locationId, ...payload } = contactData
+  const { data } = await client.put(`/contacts/${encodeURIComponent(contactId)}`, payload)
+
+  return {
+    data,
+    contactId: extractContactId(data) || contactId,
+    isNew: false
+  }
+}
+
+// Additive: leaves every tag GHL workflows have applied in place.
+async function addContactTags(contactId, tags = []) {
+  const list = [...new Set(tags.filter(Boolean))]
+  if (!contactId || list.length === 0) return null
+  const client = getClient()
+  const { data } = await client.post(`/contacts/${encodeURIComponent(contactId)}/tags`, { tags: list })
+  return data
+}
+
+async function removeContactTags(contactId, tags = []) {
+  const list = [...new Set(tags.filter(Boolean))]
+  if (!contactId || list.length === 0) return null
+  const client = getClient()
+  const { data } = await client.delete(`/contacts/${encodeURIComponent(contactId)}/tags`, { data: { tags: list } })
+  return data
+}
+
+async function getCustomFields() {
+  const client = getClient()
+  const locationId = getRequiredEnv('GHL_LOCATION_ID')
+  const { data } = await client.get(`/locations/${locationId}/customFields`)
+  return data?.customFields || []
+}
+
+async function createCustomField({ name, dataType = 'TEXT' }) {
+  const client = getClient()
+  const locationId = getRequiredEnv('GHL_LOCATION_ID')
+  const { data } = await client.post(`/locations/${locationId}/customFields`, { name, dataType, model: 'contact' })
+  return data?.customField || data
+}
+
 function normalizeLabel(value = '') {
   return String(value || '')
     .toLowerCase()
@@ -288,6 +334,11 @@ module.exports = {
   sendContractTemplate,
   extractDocumentReference,
   upsertContact,
+  updateContact,
+  addContactTags,
+  removeContactTags,
+  getCustomFields,
+  createCustomField,
   extractContactId,
   getOpportunity,
   getPipelines,

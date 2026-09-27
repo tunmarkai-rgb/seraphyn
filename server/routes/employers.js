@@ -6,6 +6,8 @@ const { dispatchPortalEvent } = require('../lib/portal-events')
 const { createNotification, notifyAdmins, notifyInternalInbox } = require('../lib/notifications')
 const { ensureEmployerProfileRow, ensurePublicUserForAuthUser } = require('../lib/user-bootstrap')
 const { signEmployerContracts, sendSignedContractEmail } = require('../lib/contracts')
+const { claimLeadForAuthUser, hasClaimedLead } = require('../lib/leads')
+const { syncContactForUser } = require('../lib/ghl-sync')
 const { requireFullAccessEmployer } = require('../lib/employer-access')
 const { getBillingSettings, computeBillRate, resolveMarkupPct, loadRateRow } = require('../lib/rates')
 const {
@@ -336,6 +338,29 @@ router.put('/applications/:id/status', requireAuth, requireRole('employer'), asy
   res.json(data)
 })
 
+// POST /api/employers/self/bootstrap -- called when onboarding opens. Makes
+// sure the profile row exists and applies any GHL lead for this confirmed
+// email, so Step 1 opens with the details the employer already gave us.
+router.post('/self/bootstrap', requireSessionUser, async (req, res) => {
+  try {
+    if (!isEmployerUser(req)) {
+      return res.status(403).json({ error: 'Employer access required' })
+    }
+
+    const publicUser = await ensurePublicUserForAuthUser(req.authUser, 'employer')
+    await claimLeadForAuthUser(req.authUser, 'employer')
+    const metadata = req.authUser.user_metadata || {}
+    const employer = await ensureEmployerProfileRow(publicUser.id, {
+      contact_name: metadata.full_name || [metadata.first_name, metadata.last_name].filter(Boolean).join(' ')
+    }, { fillEmptyOnly: true })
+
+    res.json({ employer, prefilledFromLead: await hasClaimedLead(publicUser.id) })
+  } catch (error) {
+    console.error('Employer bootstrap failed:', error.message)
+    res.status(500).json({ error: 'Failed to prepare employer profile' })
+  }
+})
+
 router.post('/onboarding/profile', requireSessionUser, async (req, res) => {
   try {
     if (!isEmployerUser(req)) {
@@ -365,6 +390,8 @@ router.post('/onboarding/profile', requireSessionUser, async (req, res) => {
       description,
       onboarding_stage: 'contract'
     })
+
+    void syncContactForUser(publicUser.id, 'employer')
 
     res.json({
       employer,

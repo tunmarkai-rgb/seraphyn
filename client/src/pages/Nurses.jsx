@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
-import { NURSE_AVAILABILITY_OPTIONS, SPECIALTIES } from '../lib/constants'
+import { NURSE_AVAILABILITY_OPTIONS, SPECIALTIES, availabilityLabel, shiftPreferenceLabel } from '../lib/constants'
 import { apiRequest, publicApiRequest } from '../lib/api'
 import { formatHourly } from '../lib/format'
 
@@ -130,7 +130,7 @@ export default function NurseDirectory() {
                 <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Availability</label>
                 <select name="availability" value={filters.availability} onChange={handleFilter} style={selectStyle}>
                   <option value="">Any</option>
-                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
               <div>
@@ -201,7 +201,7 @@ export default function NurseDirectory() {
                     <div style={{ padding: '16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                         <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--warm-gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {nurse.availability || 'Available'}
+                          {availabilityLabel(nurse.availability) || 'Available'}
                         </span>
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                           {nurse.years_experience} yr{nurse.years_experience !== 1 ? 's' : ''}
@@ -244,7 +244,7 @@ export default function NurseDirectory() {
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--success)', padding: '6px 8px', background: 'rgba(45,122,79,0.06)', borderRadius: '2px', marginBottom: '10px' }}>
                         <span style={{ width: '5px', height: '5px', background: 'var(--success)', borderRadius: '50%', display: 'inline-block' }} />
-                        Available for {nurse.shift_preference || 'All'} Shifts
+                        {nurse.shift_preference && nurse.shift_preference !== 'any' ? `${shiftPreferenceLabel(nurse.shift_preference)} Shifts` : 'Open to Any Shift Type'}
                       </div>
                       <Link to={`/nurses/${nurse.id}`} style={{ display: 'block', textAlign: 'center', padding: '7px', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--deep-navy)', textDecoration: 'none' }}>
                         View Profile →

@@ -130,11 +130,10 @@ redirect ever has to carry answers in the URL, as Funnel 3's does):
 Note the shift field's form input is `data-q="shift_preferences"` (plural) while its merge
 key is `...shift_preference` (singular) — do not assume the two match on any GHL form.
 
-Current live implementation notes:
-- Form submit redirects to `https://staffing.seraphyncare.com/nurse-signup`
-- The companion GHL workflow should call `POST https://api.seraphyncare.com/api/leads/nurse-prefill`
-- Header for that webhook action: `x-seraphyn-secret: seraphyn2026!`
-- `ghlOpportunityId` is optional in the current workflow step if HighLevel does not expose an opportunity merge field there
+Portal handoff (see [GHL form → portal handoff](#ghl-form--portal-handoff) for setup):
+- Form submit redirects to `https://staffing.seraphyncare.com/signup?role=nurse`
+- The companion GHL workflow posts the submission to `POST https://api.seraphyncare.com/api/leads/ghl`
+  with `role=nurse`. The old `/api/leads/nurse-prefill` bridge is retired (returns 410).
 
 ### 2. Employer Lead Capture Form
 (Embed ID: 4Mo2IsoMKsbP1XooIJld)
@@ -151,7 +150,26 @@ Current live implementation notes:
 | 8 | What are you looking for? | Radio | Yes |
 | 9 | Nurses needed per month | Dropdown | Yes |
 
+Merge keys, read from the live form on 2026-09-14:
+
+| Field | Merge key |
+|---|---|
+| Organization Name | `contact.organization_name` |
+| Organization Type | `contact.organization_type` |
+| State | `contact.organization_state` |
+| What are you looking for? | `contact.what_are_you_looking_for` |
+| Nurses needed per month | `contact.nurses_needed_per_month` |
+
+The "What are you looking for?" radio renders with `data-q="radio_6r7a"` — an
+auto-generated input key bearing no relation to its merge key. Never infer one from the
+other; read both off the form.
+
 **Routing:** Staffing enquiries → Employer Pipeline Stage 1 + employer sequence. Consulting enquiries → skip nurture, ping admin directly.
+
+Portal handoff: the form redirects to `https://staffing.seraphyncare.com/signup?role=employer`
+and its workflow posts to `POST /api/leads/ghl` with `role=employer`. "Consulting Services"
+answers are stored as a lead but get no portal invite email. The live State field is free
+text, not the 50-state dropdown listed above; the portal converts "New York" to `NY`.
 
 ### 3. Consulting Assessment Form
 (Embed ID: 7EP8moLgQXNVHQucSCEt)
@@ -230,15 +248,35 @@ Both steps are linked with **plain `<a href>` anchors to absolute URLs** plus a 
   Lead Capture Form (`qxTojqt2g2mV99UGXqgy`). Back → step 1.
   - **The live path is `nurse-apply-page`, not `nurse-apply`** as this doc previously said.
   - On submit the form redirects to the **portal** at
-    `https://staffing.seraphyncare.com/nurse-signup`, and the companion workflow posts to
-    `/api/leads/nurse-prefill`. No query parameters are needed — unlike Funnel 3, the
-    prefill travels over the webhook, not the URL.
+    `https://staffing.seraphyncare.com/signup?role=nurse`, and the companion workflow posts to
+    `/api/leads/ghl`. No answers go in the URL — unlike Funnel 3, the prefill travels over
+    the webhook and is applied after the nurse confirms their email.
 
 ### Funnel 2: Staffing Funnel
+
+> **Page source is version-controlled** in [ghl-funnels/staffing/](ghl-funnels/staffing/) —
+> `step-1-hospital-signup.html`, `step-2-hospital-apply.html`. Keep each file
+> byte-identical to its GHL Custom Code element.
+
+Both steps are linked with **plain `<a href>` anchors to absolute URLs** plus a shared
+2-node step tracker whose completed node is an anchor. Do not reintroduce
+`javascript:history.back()` — see the note under Funnel 3.
+
 - **Step 1 (Path: hospital-signup):** Staffing landing page with 2 CTAs
-  - Demo Calendar URL: https://api.leadconnectorhq.com/widget/booking/JRNktDpCFjwEiAusNjGU
-  - Step 2 URL: update after creating employer form page
-- **Step 2:** Employer form page with embedded Employer Lead Capture Form
+  - Demo CTA → https://api.leadconnectorhq.com/widget/booking/JRNktDpCFjwEiAusNjGU
+    — **must stay a GHL calendar.** ELS-03 triggers on a booking on this Discovery Call
+    calendar and applies the `demo-booked` tag, which also kills the ELS-01/ELS-02 nurture
+    sequences at five IF/ELSE gates. A `calendly.com/seraphyncare-info/30min` link was live
+    here until 2026-09-14; it meant no tag, no Stage 5 move, no team alert, and leads who
+    had already booked kept receiving "book a demo" emails. Same defect as Funnel 3's
+    strategy call — see the note there before swapping either calendar again.
+  - Request Staffing CTA → `https://consult.seraphyncare.com/hospital-apply-page`
+    — **was pointing at `/hospital-apply`, which does not exist.** The button was dead in
+    production. Note the `-page` suffix; the nurse funnel had the identical trap.
+  - Hero image: https://assets.cdn.filesafe.space/B508soKQSaXweoYGJGaF/media/69db80f6982fd67a358aa026.jpg
+    (784x1168 JPEG, 190 KB)
+- **Step 2 (Path: **`hospital-apply-page`**):** Employer form page with the embedded
+  Employer Lead Capture Form (`4Mo2IsoMKsbP1XooIJld`). Back → step 1.
 
 ### Funnel 3: Consulting Funnel
 
@@ -321,49 +359,75 @@ under a strict CSP.
 
 ---
 
-## Portal → GHL Webhook Integration
+## Two-way contact sync (portal ↔ GHL)
 
-When nurses or employers sign up on the portal, a webhook fires to GHL to create/update the contact and place them in the correct pipeline.
+One person, one GHL contact, one portal record — whichever door they come in through.
 
-### Nurse Portal Signup Webhook Payload
-```json
-{
-  "email": "nurse@example.com",
-  "firstName": "Sarah",
-  "lastName": "Chen",
-  "phone": "+1234567890",
-  "tags": ["nurse-lead"],
-  "customField": {
-    "specialty": "ICU / Critical Care",
-    "licenseState": "CA",
-    "shiftPreference": "Contract Travel"
-  },
-  "pipeline": "Nurse Talent Pipeline",
-  "pipelineStage": "New Applicant"
-}
-```
+### Portal → GHL
 
-### Employer Portal Signup Webhook Payload
-```json
-{
-  "email": "employer@hospital.com",
-  "firstName": "David",
-  "lastName": "Harris",
-  "companyName": "St. Mary's Medical Center",
-  "phone": "+1234567890",
-  "tags": ["staffing-lead"],
-  "customField": {
-    "facilityName": "St. Mary's Medical Center",
-    "orgType": "Hospital",
-    "state": "IL"
-  },
-  "pipeline": "Client Pipeline",
-  "pipelineStage": "New Inquiry"
-}
-```
+`server/lib/ghl-sync.js` writes the contact through the GHL API (not a workflow webhook):
 
-**Webhook handler:** `server/routes/webhooks.js` → `/api/webhooks/ghl`
-**GHL endpoint:** GHL API v2 contacts endpoint (requires GHL API key in server .env)
+- **When:** at signup (before email confirmation), after email confirmation, when a nurse
+  saves their profile, when an employer saves onboarding Step 1, and on admin approval.
+- **Which contact:** if the profile already holds a `ghl_contact_id` (from an earlier sync
+  or from the GHL form that created the lead), that exact contact is updated with
+  `PUT /contacts/:id`; otherwise `/contacts/upsert` matches by email.
+- **Fields:** the same custom-field keys the funnel forms write, so a contact never ends up
+  with two sets of answers:
+
+| Portal column | GHL custom field | Value mapping |
+|---|---|---|
+| nurse `specialty` | `primary_specialty` | `ICU / Critical Care` → `ICU`, `Medical-Surgical` → `Med-Surg`, … |
+| nurse `license_state` | `nursing_license_state` | 2-letter code |
+| nurse `years_experience` | `whats_your_years_of_experience` | number → `1-2` / `3-5` / `6-10` / `11-15` / `15+` |
+| nurse `shift_preference` | `whats_your_shift_preference` | `per_diem` → `Per Diem`; `any` is not sent |
+| nurse `license_number`, `availability`, `certifications` | same names | |
+| employer `org_name` | `organization_name` | |
+| employer `org_type` | `organization_type` | `Long-Term Care Facility` → `Long-Term Care`, … |
+| employer `state` | `organization_state` | |
+| employer `contact_title`, `bed_count` | `decision_maker_role`, `bed_size` | |
+| employer `onboarding_stage` | `portal_onboarding_stage` | created 2026-09-24 |
+
+- **Tags** are added through `POST /contacts/:id/tags`, which is additive, so tags applied
+  by GHL workflows are never wiped. Portal contacts get `nurse-portal-registered` /
+  `employer-portal-registered` (which end the NRS-01/02 and ELS-01/02 nurture), plus
+  `portal-nurse` / `portal-employer` and `portal-account`. The portal deliberately never
+  adds `nurse-lead` or `staffing-lead`: those tags *start* the nurture sequences.
+- Check the keys against the live location with `node server/scripts/ghl-custom-fields.js`.
+  GHL silently drops a write to a key it does not know.
+
+### GHL form → portal handoff
+
+1. A nurse or employer submits the funnel form.
+2. The form redirects them to `https://staffing.seraphyncare.com/signup?role=nurse` (or
+   `role=employer`). That page asks only for name, email and password.
+3. In parallel, the form's GHL workflow posts the submission to `POST /api/leads/ghl`. The
+   portal stores it in `leads`, emails a "Finish creating your account" link (Resend), and
+   writes the same link to the contact's `portal_signup_url` field so GHL SMS/email steps
+   can use `{{contact.portal_signup_url}}`.
+4. When the person signs up with the same email and **confirms it**, the portal copies the
+   lead's answers into their profile (only into empty fields) and links the GHL contact.
+   The nurse profile / employer onboarding page opens prefilled.
+
+If they already had a confirmed portal account, step 3 fills any gaps in that profile
+instead of sending an invite.
+
+**GHL setup, per form** (nurse form `qxTojqt2g2mV99UGXqgy`, employer form `4Mo2IsoMKsbP1XooIJld`):
+
+1. **Form → Options → On submit:** redirect to URL
+   `https://staffing.seraphyncare.com/signup?role=nurse` (employer form: `role=employer`).
+2. **Workflow** triggered by *Form Submitted* for that form → add a **Webhook** action:
+   - Method `POST`, URL `https://api.seraphyncare.com/api/leads/ghl`
+   - Header `x-seraphyn-secret` = the value of `LEAD_BRIDGE_SECRET` on the API server
+     (kept in the server `.env`, never in this repo)
+   - Custom data: `role` = `nurse` (or `employer`). The standard webhook body already
+     carries the contact id, name, email, phone and the form's custom fields; the portal
+     reads them under their field names or keys, so no other mapping is needed.
+3. Optional: in NRS-02 / ELS-02 replace hard-coded portal links with
+   `{{contact.portal_signup_url}}`.
+
+A consulting-only employer ("What are you looking for?" = Consulting Services) is stored
+but not invited to the portal.
 
 ---
 
@@ -377,19 +441,24 @@ Automation sequences live, calendar booking live, GHL Documents contract flow li
 
 ---
 
-## Remaining Funnel Placeholders
+## Funnel Placeholders — all resolved
 
-| Page | Placeholder | Replace With |
-|---|---|---|
-| Staffing Landing (Step 1) | `YOUR_DEMO_CALENDAR_URL_HERE` | https://api.leadconnectorhq.com/widget/booking/JRNktDpCFjwEiAusNjGU |
-| Staffing Landing (Step 1) | `YOUR_STAFFING_FORM_STEP2_URL_HERE` | Staffing form page URL (pull from GHL funnel) |
+**None remain.** All three funnels were reworked between 2026-09-10 and 2026-09-14 and their
+page source now lives in [ghl-funnels/](ghl-funnels/). Grep that directory for `_HERE` to
+confirm before trusting this heading.
 
-All three **consulting** placeholders were resolved on 2026-09-10 and the pages committed to
-[ghl-funnels/consulting/](ghl-funnels/consulting/). They had been live in production the
-whole time, so the step 1 → step 2 link and both step 3 CTAs were dead. When updating the
-remaining funnels, check for live `YOUR_*_HERE` strings in the page source first rather than
-assuming the table is current — it under-reported by one (`YOUR_PAYMENT_LINK_HERE` on the
-consulting book page was never listed here).
+This table used to list what was outstanding, and it was wrong in both directions:
+
+- It **under-reported.** `YOUR_PAYMENT_LINK_HERE` was live on the consulting book page and
+  was never listed here at all.
+- It **over-reported.** Both staffing entries had in fact been filled in — but wrongly: the
+  demo CTA had been pointed at Calendly (breaking ELS-03) and the step 2 CTA at
+  `/hospital-apply`, a path that does not exist.
+
+The lesson for any future funnel work: **read the live page source, never this table.** A
+placeholder that has been replaced with the wrong value is worse than one left in place,
+because nothing flags it — the consulting funnel's dead CTAs and the staffing funnel's dead
+"Request Staffing" button had all been sitting in production unnoticed.
 
 ---
 

@@ -56,8 +56,10 @@ function verifyGhlWebhook(req) {
     }
   }
 
+  // Unsigned requests need the shared secret. Without one configured they are
+  // only let through outside production, for local testing.
   const configuredSecret = process.env.GHL_WEBHOOK_SECRET
-  if (!configuredSecret) return true
+  if (!configuredSecret) return process.env.NODE_ENV !== 'production'
 
   const sharedSecret = (
     req.headers['x-ghl-webhook-secret'] ||

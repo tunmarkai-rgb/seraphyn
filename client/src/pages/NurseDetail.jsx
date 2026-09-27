@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar'
 import { apiRequest } from '../lib/api'
 import { formatHourly } from '../lib/format'
 import RequestNurseModal from '../components/RequestNurseModal'
+import { availabilityLabel, shiftPreferenceLabel } from '../lib/constants'
 
 export default function NurseDetail() {
   const { id } = useParams()
@@ -196,9 +197,9 @@ export default function NurseDetail() {
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: canSeeRate ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '20px' }}>
             {[
-              ['Availability', nurse.availability || 'Contact for details'],
+              ['Availability', availabilityLabel(nurse.availability) || 'Contact for details'],
               ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '-'],
-              ['Shift Preference', nurse.shift_preference || 'Flexible'],
+              ['Shift Preference', shiftPreferenceLabel(nurse.shift_preference) || 'Flexible'],
               // Bill rate, not nurse take-home. Only full-access employers and
               // admins receive a rate from the API at all.
               ...(canSeeRate ? [['Bill Rate', formatHourly(nurse.bill_rate)]] : []),

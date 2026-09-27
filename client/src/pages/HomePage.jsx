@@ -188,10 +188,10 @@ export default function HomePage() {
           </p>
 
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <Link to="/nurse-signup" style={{ padding: '14px 30px', background: 'var(--warm-gold)', color: 'white', borderRadius: '999px', fontSize: '13px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
+            <Link to="/signup?role=nurse" style={{ padding: '14px 30px', background: 'var(--warm-gold)', color: 'white', borderRadius: '999px', fontSize: '13px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
               Join as a Nurse
             </Link>
-            <Link to="/employer-signup" style={{ padding: '14px 30px', border: '1px solid rgba(245,245,240,0.35)', color: 'var(--warm-white)', borderRadius: '999px', fontSize: '13px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
+            <Link to="/signup?role=employer" style={{ padding: '14px 30px', border: '1px solid rgba(245,245,240,0.35)', color: 'var(--warm-white)', borderRadius: '999px', fontSize: '13px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
               Hire Nurses
             </Link>
             <Link to="/contact" style={{ padding: '14px 30px', border: '1px solid rgba(245,245,240,0.18)', color: 'rgba(245,245,240,0.88)', borderRadius: '999px', fontSize: '13px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '600', textDecoration: 'none' }}>
@@ -225,7 +225,7 @@ export default function HomePage() {
             <p style={{ fontSize: '16px', color: 'var(--text-muted)', maxWidth: '420px', fontWeight: '300', lineHeight: '1.8', marginBottom: '40px' }}>
               From profile to placement in days, not weeks. The workflow is designed to reduce friction without sacrificing quality.
             </p>
-            <Link to="/nurse-signup" style={{ padding: '13px 28px', background: 'var(--deep-navy)', color: 'white', borderRadius: '999px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
+            <Link to="/signup?role=nurse" style={{ padding: '13px 28px', background: 'var(--deep-navy)', color: 'white', borderRadius: '999px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
               Get Started Today
             </Link>
           </div>
@@ -423,8 +423,8 @@ export default function HomePage() {
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', maxWidth: '800px', margin: '0 auto' }} className="cta-grid">
           {[
-            { title: "I'm a Nurse", desc: 'Create your profile, upload credentials, and start browsing premium travel and contract opportunities nationwide.', cta: 'Create Nurse Profile', href: '/nurse-signup', bg: 'var(--sky-blue)', accent: 'white' },
-            { title: "I'm an Employer", desc: 'Register your facility, post open positions, and connect directly with verified nursing professionals.', cta: 'Post Your First Job', href: '/employer-signup', bg: 'var(--warm-gold)', accent: 'white' },
+            { title: "I'm a Nurse", desc: 'Create your profile, upload credentials, and start browsing premium travel and contract opportunities nationwide.', cta: 'Create Nurse Profile', href: '/signup?role=nurse', bg: 'var(--sky-blue)', accent: 'white' },
+            { title: "I'm an Employer", desc: 'Register your facility, post open positions, and connect directly with verified nursing professionals.', cta: 'Post Your First Job', href: '/signup?role=employer', bg: 'var(--warm-gold)', accent: 'white' },
           ].map((card) => (
             <div
               key={card.title}

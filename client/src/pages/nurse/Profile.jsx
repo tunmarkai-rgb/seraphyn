@@ -9,23 +9,17 @@ import { formatHourly } from '../../lib/format'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
+const SHIFT_VALUES = new Set(NURSE_SHIFT_PREFERENCES.map((option) => option.value))
+const AVAILABILITY_VALUES = new Set(NURSE_AVAILABILITY_OPTIONS.map((option) => option.value))
+
+// Anything that is not a live enum value (e.g. a legacy label) is treated as
+// unset rather than sent to Postgres and rejected.
 function normalizeShiftPreference(value) {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return ''
-  if (raw === 'per diem') return 'Per Diem'
-  if (raw === 'contract travel') return 'Contract Travel'
-  if (raw === 'permanent') return 'Permanent'
-  return ''
+  return SHIFT_VALUES.has(value) ? value : ''
 }
 
 function normalizeAvailability(value) {
-  const raw = String(value || '').trim().toLowerCase()
-  if (!raw) return ''
-  if (raw === 'immediate' || raw === 'immediately' || raw === 'available now') return 'Immediate'
-  if (raw === '2 weeks') return '2 Weeks'
-  if (raw === '30 days' || raw === '1 month') return '30 Days'
-  if (raw === 'not available') return 'Not Available'
-  return ''
+  return AVAILABILITY_VALUES.has(value) ? value : ''
 }
 
 export default function NurseProfile() {
@@ -52,6 +46,7 @@ export default function NurseProfile() {
   const [uploadingCertification, setUploadingCertification] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [prefilledFromLead, setPrefilledFromLead] = useState(false)
 
   // Rate lives in its own table behind the API, so it gets its own state and
   // its own save action rather than joining the profile upsert below.
@@ -73,6 +68,7 @@ export default function NurseProfile() {
     const source = data || {}
 
     setProfileId(source.id || '')
+    setPrefilledFromLead(Boolean(bootstrap?.prefilledFromLead))
     setResumePath(source.resume_url || '')
     setLicensePath(source.license_url || '')
     setResumeUrl(bootstrap?.fileUrls?.resume || '')
@@ -84,7 +80,7 @@ export default function NurseProfile() {
       license_number: source.license_number || '',
       license_state: source.license_state || metadata.license_state || '',
       years_experience: source.years_experience || metadata.years_experience || '',
-      shift_preference: normalizeShiftPreference(source.shift_preference || metadata.shift_preference || ''),
+      shift_preference: normalizeShiftPreference(source.shift_preference),
       availability: normalizeAvailability(source.availability || ''),
       bio: source.bio || '',
       certifications: source.certifications || []
@@ -337,6 +333,11 @@ export default function NurseProfile() {
           <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>Keep your information current for better job matches.</p>
         </div>
 
+        {prefilledFromLead && (
+          <div style={{ background: 'rgba(126,181,200,0.12)', border: '1px solid rgba(126,181,200,0.3)', borderRadius: '2px', padding: '12px 16px', marginBottom: '24px', fontSize: '13px', color: 'var(--deep-navy)', lineHeight: '1.6' }}>
+            We've filled in what you told us on your Seraphyn application. Check it over and add anything that's missing.
+          </div>
+        )}
         {error && (
           <div style={{ background: 'rgba(180,60,60,0.08)', border: '1px solid rgba(180,60,60,0.25)', borderRadius: '2px', padding: '12px 16px', marginBottom: '24px', fontSize: '13px', color: '#B43C3C' }}>
             {error}
@@ -387,7 +388,7 @@ export default function NurseProfile() {
                   <label style={labelStyle}>Shift Preference</label>
                   <select name="shift_preference" value={form.shift_preference} onChange={handle} style={inputStyle}>
                     <option value="">Select...</option>
-                    {NURSE_SHIFT_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
+                    {NURSE_SHIFT_PREFERENCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -395,7 +396,7 @@ export default function NurseProfile() {
                 <label style={labelStyle}>Availability</label>
                 <select name="availability" value={form.availability} onChange={handle} style={inputStyle}>
                   <option value="">Select...</option>
-                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  {NURSE_AVAILABILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
               <div>

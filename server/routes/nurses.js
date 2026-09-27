@@ -3,7 +3,8 @@ const router = express.Router()
 const multer = require('multer')
 const { supabase } = require('../config/supabase')
 const { requireAuth, requireRole, requireSessionUser, optionalAuth } = require('../middleware/auth')
-const { ensureNurseProfileRow, ensurePublicUserForAuthUser, normalizeShiftPreference } = require('../lib/user-bootstrap')
+const { ensureNurseProfileRow, ensurePublicUserForAuthUser } = require('../lib/user-bootstrap')
+const { claimLeadForAuthUser, hasClaimedLead } = require('../lib/leads')
 const {
   getBillingSettings,
   validateHourlyRate,
@@ -47,21 +48,17 @@ function isNurseUser(req) {
   return req.user?.role === 'nurse' || req.authUser?.user_metadata?.role === 'nurse'
 }
 
+// Seeds only empty columns: signup metadata and GHL lead answers fill gaps but
+// never undo an edit the nurse has made on the profile page.
 async function ensureCurrentNurseProfile(req) {
   const authUser = req.authUser || req.user
   const publicUser = await ensurePublicUserForAuthUser(authUser, 'nurse')
   const metadata = authUser?.user_metadata || {}
-  const yearsExperience = metadata.years_experience
+  await claimLeadForAuthUser(authUser, 'nurse')
   return ensureNurseProfileRow(publicUser.id, {
     first_name: metadata.first_name || '',
-    last_name: metadata.last_name || '',
-    specialty: metadata.specialty || '',
-    license_state: metadata.license_state || '',
-    years_experience: yearsExperience !== undefined && yearsExperience !== null && String(yearsExperience).trim() !== ''
-      ? Number(yearsExperience)
-      : null,
-    shift_preference: normalizeShiftPreference(metadata.shift_preference || '', null)
-  })
+    last_name: metadata.last_name || ''
+  }, { fillEmptyOnly: true })
 }
 
 async function createPrivateFileUrl(bucket, path) {
@@ -215,6 +212,7 @@ router.post('/self/bootstrap', requireSessionUser, async (req, res) => {
 
     res.json({
       profile,
+      prefilledFromLead: await hasClaimedLead(profile.user_id),
       fileUrls: {
         resume: resumeUrl,
         license: licenseUrl

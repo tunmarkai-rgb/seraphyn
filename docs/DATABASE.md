@@ -275,6 +275,19 @@ Append-only transition log: `request_id`, `actor_role`
 (`employer`/`admin`/`nurse`/`system`), `actor_id`, `from_status`, `to_status`,
 `note`, `created_at`. RLS enabled, no policies.
 
+### leads
+One row per email that submitted a GHL funnel form (nurse or employer), written by
+`POST /api/leads/ghl`. Schema in [LEADS.sql](LEADS.sql) (hand-applied). Columns:
+`email` (lower-cased, unique), `role`, `source`, `ghl_contact_id`,
+`ghl_opportunity_id`, name/phone, the normalized nurse answers (`license_state`,
+`specialty`, `years_experience`, `shift_preference`) or employer answers (`org_name`,
+`org_type`, `state`, `looking_for`, `nurses_needed_per_month`), `raw` (the full
+webhook body), `invite_sent_at`, `claimed_by`, `claimed_at`.
+
+A lead is applied to a profile (fill-empty-fields-only) only after Supabase has
+confirmed that account's email, which is what proves the portal account belongs to
+the person who filled in the form. RLS enabled, no policies: server-only.
+
 ---
 
 ## Storage Buckets
@@ -325,10 +338,12 @@ any file here. Dump `pg_policies` before changing access control.
   - application thread: `messages.application_id` references `applications.id`
   - direct thread: `messages.application_id` is `null`, grouped by sender/receiver pair
 - New nurse and employer signups also create internal operational alerts for approval review.
-- Production nurse profile writes normalize the currently accepted enum-backed values to:
-  - `shift_preference = any`
-  - `availability = available`
-- Legacy nurse metadata values from older signup flows are coerced server-side so profile bootstrap and uploads do not fail on enum mismatches.
+- `nurse_profiles.shift_preference` is the Postgres enum `per_diem | contract_travel | permanent | any`
+  and `availability` is `available | placed | unavailable` (read from the live schema on
+  2026-09-24). `any` / `available` are the defaults. The UI shows labels but writes these
+  values; `server/lib/lead-normalize.js` maps labels and GHL answers onto them. (Between
+  commit 91f2d14 and 2026-09-24 the profile page wrote `'Per Diem'`-style labels, which the
+  enum rejects.)
 - After the May 23, 2026 cleanup pass, the only intentionally retained baseline users are:
   - `kundayiw@gmail.com` (admin)
   - `nurse.test@seraphyn.com` (test nurse)

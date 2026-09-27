@@ -37,47 +37,16 @@ Current baseline after cleanup:
 
 ## What you need to do
 
-### 1. Fix the GHL form submit handoff
+### 1. Set up the GHL form → portal handoff
 
-Your GHL Nurse Lead Capture Form flow must send the nurse into:
+Both lead forms (nurse and employer) hand off to the portal. Full steps are in
+[GHL.md → GHL form → portal handoff](GHL.md#ghl-form--portal-handoff). In short:
 
-- `POST https://api.seraphyncare.com/api/leads/nurse-prefill`
-
-Use header:
-
-- `x-seraphyn-secret: seraphyn2026!`
-
-Send this JSON body:
-
-```json
-{
-  "firstName": "{{contact.first_name}}",
-  "lastName": "{{contact.last_name}}",
-  "email": "{{contact.email}}",
-  "phone": "{{contact.phone}}",
-  "licenseState": "{{contact.state}}",
-  "specialty": "{{contact.specialty}}",
-  "yearsExperience": "{{contact.years_experience}}",
-  "shiftPreference": "{{contact.shift_preference}}",
-  "ghlContactId": "{{contact.id}}",
-  "ghlOpportunityId": "{{opportunity.id}}",
-  "source": "ghl-form"
-}
-```
-
-Important:
-
-- `ghlOpportunityId` is now preferred for the cleanest nurse funnel stage progression.
-- Without `ghlOpportunityId`, the portal can still prefill signup, but GHL opportunity updates are less reliable.
-- The current GHL workflow node may omit `ghlOpportunityId` if HighLevel does not expose an opportunity merge field there.
-- The nurse profile flow now normalizes older lead/signup values to the live stored values required by production:
-  - `shift_preference -> any`
-  - `availability -> available`
-
-Current live redirect path:
-
-- The GHL form itself currently redirects to `https://staffing.seraphyncare.com/nurse-signup`
-- The webhook call is still used to preserve lead data and GHL linkage on the backend
+- Form redirect: `https://staffing.seraphyncare.com/signup?role=nurse` (employer form: `role=employer`)
+- Form workflow → Webhook action: `POST https://api.seraphyncare.com/api/leads/ghl`,
+  header `x-seraphyn-secret` = the server's `LEAD_BRIDGE_SECRET`, custom data `role`
+- Apply [LEADS.sql](LEADS.sql) in Supabase before switching the workflow over
+- The old `/api/leads/nurse-prefill` bridge is retired and returns 410
 
 ### 2. Make sure GHL still creates the contact and opportunity first
 
@@ -116,8 +85,8 @@ Run one real test from the funnel:
 1. Open `consult.seraphyncare.com/nurse-signup`
 2. Click CTA
 3. Submit GHL Nurse Lead Capture Form
-4. Confirm redirect to the portal signup page
-5. Complete signup
+4. Confirm redirect to the portal signup page and the "Finish creating your account" email
+5. Sign up with the same email, confirm it, and check the nurse profile opens prefilled
 6. Upload resume and license
 7. Confirm stage movement in GHL:
    - `New Applicant`
@@ -145,8 +114,8 @@ You should log into the portal with a nurse, employer, and admin test account an
 
 Do these in this exact order:
 
-1. Update the GHL form workflow to send `x-seraphyn-secret: seraphyn2026!` to `/api/leads/nurse-prefill`
-2. Confirm redirect to `https://staffing.seraphyncare.com/nurse-signup`
+1. Apply `docs/LEADS.sql`, then point both GHL form workflows at `/api/leads/ghl`
+2. Confirm the forms redirect to `https://staffing.seraphyncare.com/signup?role=...`
 3. Publish `NRS-01`, `NRS-03`, and `NRS-04` in GHL
 4. Run one full nurse test
 5. Run one portal messaging test with logged-in users

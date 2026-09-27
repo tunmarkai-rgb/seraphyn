@@ -154,7 +154,7 @@ export default function Navbar({ transparent = false }) {
                 Login
               </Link>
               <Link
-                to="/nurse-signup"
+                to="/signup?role=nurse"
                 style={{
                   padding: '9px 18px',
                   border: `1px solid ${heroMode ? 'rgba(245,245,240,0.28)' : 'var(--deep-navy)'}`,
@@ -170,7 +170,7 @@ export default function Navbar({ transparent = false }) {
                 I&apos;m a Nurse
               </Link>
               <Link
-                to="/employer-signup"
+                to="/signup?role=employer"
                 style={{
                   padding: '10px 18px',
                   background: 'var(--warm-gold)',
@@ -289,10 +289,10 @@ export default function Navbar({ transparent = false }) {
               <Link to="/login" onClick={() => setMenuOpen(false)} style={{ padding: '12px', border: '1px solid var(--border)', color: 'var(--deep-navy)', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
                 Login
               </Link>
-              <Link to="/nurse-signup" onClick={() => setMenuOpen(false)} style={{ padding: '12px', border: '1px solid var(--deep-navy)', color: 'var(--deep-navy)', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+              <Link to="/signup?role=nurse" onClick={() => setMenuOpen(false)} style={{ padding: '12px', border: '1px solid var(--deep-navy)', color: 'var(--deep-navy)', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
                 I&apos;m a Nurse
               </Link>
-              <Link to="/employer-signup" onClick={() => setMenuOpen(false)} style={{ padding: '12px', background: 'var(--warm-gold)', color: 'white', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '700' }}>
+              <Link to="/signup?role=employer" onClick={() => setMenuOpen(false)} style={{ padding: '12px', background: 'var(--warm-gold)', color: 'white', borderRadius: '999px', fontSize: '12px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '700' }}>
                 Post Jobs
               </Link>
             </div>

@@ -48,6 +48,8 @@ Two-sided healthcare staffing marketplace.
 11. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
 12. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
 13. Portal messaging supports both application threads and direct user-to-user threads. Direct threads store `messages.application_id = null`.
+14. GHL form answers (the `leads` table) are applied to a portal profile only after Supabase has confirmed that account's email, and only into empty fields. Never return lead data to an unauthenticated browser.
+15. Portal → GHL contact writes use the funnel forms' custom-field keys (`primary_specialty`, `organization_name`, ...) and add tags additively. The portal adds `nurse-portal-registered` / `employer-portal-registered`, never `nurse-lead` / `staffing-lead` (those start GHL nurture sequences).
 
 ---
 
@@ -118,7 +120,7 @@ Notes:
 - The backend accepts either `SUPABASE_SERVICE_KEY` or `SUPABASE_SECRET_KEY`.
 - On the current DigitalOcean production droplet, public routing is handled by the existing Docker/Caddy stack, not by Nginx.
 - The frontend uses `VITE_APP_URL` when building auth email redirect targets so confirmation and reset links do not fall back to localhost.
-- The nurse lead bridge in production currently expects `x-seraphyn-secret: seraphyn2026!` for the GHL nurse lead webhook action.
+- GHL form workflows post to `POST /api/leads/ghl` with header `x-seraphyn-secret` = `LEAD_BRIDGE_SECRET` (also accepts `GHL_WORKFLOW_WEBHOOK_SECRET` / `N8N_WEBHOOK_SECRET`). The existing value is kept by client decision (not rotated); keep it out of committed docs. The signed-token `/api/leads/nurse-prefill` bridge is retired (410).
 - Employer contract emails now go through Resend with attachments and `cc` support when agreements are signed in the portal; current CC target is `info@seraphyncare.com`.
 
 ---
@@ -126,6 +128,8 @@ Notes:
 ## Auth Status
 
 Current live auth flow state:
+
+- Signup is one short page at `/signup?role=nurse|employer` (name, email, password). `/nurse-signup` and `/employer-signup` redirect there with their query string. Profile details are collected after confirmation, on the nurse profile page or employer onboarding Step 1, prefilled from a GHL lead when one exists
 
 - Signup confirmation route is live at `https://staffing.seraphyncare.com/auth/confirm`
 - Password reset request page is live at `https://staffing.seraphyncare.com/forgot-password`
@@ -255,8 +259,8 @@ Current production n8n state:
 - Admin contract send/resend controls
 - Nurse certification proof uploads + private document access
 - Nurse profile upload flow now uses server bootstrap plus canonical enum normalization:
-  - `shift_preference` is stored as `any`
-  - `availability` is stored as `available`
+  - `shift_preference` is the enum `per_diem | contract_travel | permanent | any` (default `any`)
+  - `availability` is the enum `available | placed | unavailable` (default `available`)
   - legacy signup values such as `Permanent`, `Per Diem`, `Contract Travel`, `Day`, `Night`, `Evening`, and `Mixed` are normalized during bootstrap
 - Nurse profile page now exposes a direct `Go to Dashboard` CTA so mobile users are not trapped at the bottom of the form
 - GHL workflow docs aligned to offline billing
@@ -274,6 +278,11 @@ Current production n8n state:
   - employers see only coarse labels so they cannot tell whether the nurse has been asked yet
   - lives in `nurse_requests`, not `applications` (no job, and rate columns would leak both ways)
   - `server/lib/employer-access.js` now holds the single definition of employer full access, replacing four inline copies
+- Two-way GHL ↔ portal contact sync (single signup, GHL lead prefill):
+  - GHL nurse/employer form → GHL workflow webhook → `POST /api/leads/ghl` → `leads` row + Resend "Finish creating your account" email + `portal_signup_url` on the GHL contact
+  - lead is claimed on email confirmation (`/api/integrations/ghl/sync-self`, nurse bootstrap, `POST /api/employers/self/bootstrap`)
+  - portal contacts reach GHL at signup (not only after confirmation) and after profile saves; an existing `ghl_contact_id` is updated in place with `PUT /contacts/:id`
+  - `server/lib/lead-normalize.js` maps GHL option labels ↔ portal values; `node server/scripts/ghl-custom-fields.js` checks the live GHL keys
 - Per-diem shift rate reconciliation:
   - `per_diem_shifts.hourly_rate` is now explicitly the **bill rate the employer pays**, relabelled in the employer shift form
   - `nurse_pay_rate` and `markup_pct_snapshot` are admin-set and snapshotted at booking, never recomputed
@@ -312,3 +321,4 @@ Current production n8n state:
 | [docs/NURSE_RATES.sql](docs/NURSE_RATES.sql) | Nurse rate + agency markup schema (hand-apply in Supabase) |
 | [docs/NURSE_REQUESTS.sql](docs/NURSE_REQUESTS.sql) | Employer-initiated nurse request schema (hand-apply in Supabase) |
 | [docs/PER_DIEM_SHIFT_RATES.sql](docs/PER_DIEM_SHIFT_RATES.sql) | Per-diem shift nurse pay + markup snapshot columns (hand-apply in Supabase) |
+| [docs/LEADS.sql](docs/LEADS.sql) | GHL lead intake table for the form → portal handoff (hand-apply in Supabase) |

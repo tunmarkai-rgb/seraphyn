@@ -9,14 +9,14 @@ export const COMPANY_LINKS = [
 ]
 
 export const NURSE_LINKS = [
-  ['Create Profile', '/nurse-signup'],
+  ['Create Profile', '/signup?role=nurse'],
   ['Browse Jobs', '/jobs'],
   ['Applications', '/nurse/applications'],
   ['Dashboard', '/nurse/dashboard'],
 ]
 
 export const EMPLOYER_LINKS = [
-  ['Register', '/employer-signup'],
+  ['Register', '/signup?role=employer'],
   ['Find Nurses', '/nurses'],
   ['Post a Job', '/employer/post-job'],
   ['Dashboard', '/employer/dashboard'],

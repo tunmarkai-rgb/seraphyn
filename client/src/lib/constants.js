@@ -16,18 +16,29 @@ export const SPECIALTIES = [
   'Other',
 ]
 
+// Values are the live Postgres enums (public.shift_preference and
+// public.nurse_availability); labels are what people see.
 export const NURSE_SHIFT_PREFERENCES = [
-  'Per Diem',
-  'Contract Travel',
-  'Permanent'
+  { value: 'per_diem', label: 'Per Diem' },
+  { value: 'contract_travel', label: 'Contract Travel' },
+  { value: 'permanent', label: 'Permanent' },
+  { value: 'any', label: 'Open to Any' }
 ]
 
 export const NURSE_AVAILABILITY_OPTIONS = [
-  'Immediate',
-  '2 Weeks',
-  '30 Days',
-  'Not Available'
+  { value: 'available', label: 'Available' },
+  { value: 'unavailable', label: 'Not Available' }
 ]
+
+const PLACED_AVAILABILITY = { value: 'placed', label: 'Placed' }
+
+export function shiftPreferenceLabel(value) {
+  return NURSE_SHIFT_PREFERENCES.find((option) => option.value === value)?.label || value || ''
+}
+
+export function availabilityLabel(value) {
+  return [...NURSE_AVAILABILITY_OPTIONS, PLACED_AVAILABILITY].find((option) => option.value === value)?.label || value || ''
+}
 
 export const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',

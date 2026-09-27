@@ -4,6 +4,7 @@ import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import StatusBadge from '../../components/StatusBadge'
 import AdminRatePanel from '../../components/AdminRatePanel'
+import { availabilityLabel, shiftPreferenceLabel } from '../../lib/constants'
 
 export default function AdminNurses() {
   const [searchParams] = useSearchParams()
@@ -189,8 +190,8 @@ export default function AdminNurses() {
                         ['License No.', nurse.license_number],
                         ['License State', nurse.license_state],
                         ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '-'],
-                        ['Shift Preference', nurse.shift_preference || '-'],
-                        ['Availability', nurse.availability || '-'],
+                        ['Shift Preference', shiftPreferenceLabel(nurse.shift_preference) || '-'],
+                        ['Availability', availabilityLabel(nurse.availability) || '-'],
                       ].map(([label, value]) => (
                         <div key={label}>
                           <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '3px' }}>{label}</p>

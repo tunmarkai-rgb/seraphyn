@@ -326,9 +326,9 @@ export default function Login() {
             </h1>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
               Don't have an account?{' '}
-              <Link to="/nurse-signup" style={{ color: 'var(--sky-blue)', fontWeight: '500' }}>Join as a Nurse</Link>
+              <Link to="/signup?role=nurse" style={{ color: 'var(--sky-blue)', fontWeight: '500' }}>Join as a Nurse</Link>
               {' '}or{' '}
-              <Link to="/employer-signup" style={{ color: 'var(--sky-blue)', fontWeight: '500' }}>Register as Employer</Link>
+              <Link to="/signup?role=employer" style={{ color: 'var(--sky-blue)', fontWeight: '500' }}>Register as Employer</Link>
             </p>
           </div>
 
