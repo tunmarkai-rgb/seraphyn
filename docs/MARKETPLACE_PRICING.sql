@@ -84,6 +84,10 @@ from public.jobs
 where pay_rate is not null and pay_rate > 0
 on conflict (job_id) do nothing;
 
+-- Live `jobs.pay_rate` was NOT NULL. New jobs no longer write it (the budget
+-- goes to job_budgets), so the constraint has to go before anything else here.
+alter table public.jobs alter column pay_rate drop not null;
+
 -- `jobs` is readable by nurses, so once the value is safely in job_budgets the
 -- copy on the job row is cleared -- otherwise it would leak the maximum.
 update public.jobs j
