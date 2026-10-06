@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
+import FitBadge from '../../components/FitBadge'
+import { apiRequest } from '../../lib/api'
+import { formatHourly } from '../../lib/format'
 
 const COMPLETION_FIELDS = [
   'first_name', 'last_name', 'specialty', 'license_number',
@@ -29,7 +32,7 @@ export default function NurseDashboard() {
   const { user, profile } = useAuth()
   const [nurseProfile, setNurseProfile] = useState(null)
   const [applications, setApplications] = useState([])
-  const [jobs, setJobs] = useState([])
+  const [market, setMarket] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -48,22 +51,21 @@ export default function NurseDashboard() {
       setNurseProfile(np)
 
       if (np) {
-        const [appsRes, jobsRes] = await Promise.all([
+        const [appsRes, marketRes] = await Promise.all([
           supabase
             .from('applications')
-            .select('*, jobs(title, city, state, specialty, pay_rate, shift_type, contract_length)')
+            .select('*, jobs(title, city, state, specialty, shift_type, contract_length)')
             .eq('nurse_id', np.id)
             .order('created_at', { ascending: false })
             .limit(5),
-          supabase
-            .from('jobs')
-            .select('*, employer_profiles(org_name)')
-            .eq('status', 'active')
-            .order('created_at', { ascending: false })
-            .limit(3)
+          // Market response and matched jobs. Never allowed to break the page.
+          apiRequest('/api/nurses/self/market').catch((marketError) => {
+            console.error('Failed to load market response:', marketError.message)
+            return null
+          })
         ])
         setApplications(appsRes.data || [])
-        setJobs(jobsRes.data || [])
+        setMarket(marketRes)
       }
     } finally {
       setLoading(false)
@@ -100,7 +102,9 @@ export default function NurseDashboard() {
     suspended: { label: 'Suspended',        bg: 'rgba(90,107,122,0.15)',  color: 'var(--text-muted)' },
   }[approvalStatus]
 
-  const recommendations = nurseProfile?.ai_job_matches || []
+  const recommendations = market?.recommendations || []
+  const marketCounts = market?.market || null
+  const myRate = market?.rate || null
 
   if (loading) {
     return (
@@ -238,19 +242,49 @@ export default function NurseDashboard() {
               })}
             </div>
 
-            {/* Rate nudge. Deliberately static rather than fetching the rate:
-                adding it to COMPLETION_FIELDS would drop every existing nurse
+            {/* Desired pay and market response. Desired pay is deliberately not
+                in COMPLETION_FIELDS: adding it would drop every existing nurse
                 below 100% and trigger the completion nag. */}
             <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '20px', marginTop: '20px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Your Rate
+              <h3 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Your Desired Pay
               </h3>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '12px' }}>
-                Set your desired hourly rate so facilities can find you in rate-filtered
-                searches.
-              </p>
-              <Link to="/nurse/profile" style={{ fontSize: '11px', color: 'var(--sky-blue)', fontWeight: '500', letterSpacing: '0.05em', textTransform: 'uppercase', textDecoration: 'none' }}>
-                Set your rate &rarr;
+              {myRate?.desired_hourly != null ? (
+                <>
+                  <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '28px', fontWeight: '500', color: 'var(--deep-navy)', lineHeight: 1.1 }}>
+                    {formatHourly(myRate.desired_hourly)}
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                    Your potential hospital bill rate: <strong style={{ color: 'var(--deep-navy)' }}>{formatHourly(myRate.bill_rate)}</strong>
+                    {' '}(+{formatHourly(myRate.agency_fee)} Seraphyn fee)
+                  </p>
+
+                  {marketCounts && marketCounts.total > 0 ? (
+                    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                      <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '10px' }}>Market response</p>
+                      <p style={{ fontSize: '13px', color: 'var(--deep-navy)', marginBottom: '6px' }}>🟢 {marketCounts.fits} open {marketCounts.fits === 1 ? 'opportunity fits' : 'opportunities fit'} your desired pay</p>
+                      <p style={{ fontSize: '13px', color: 'var(--deep-navy)', marginBottom: '6px' }}>🟡 {marketCounts.urgent_above} {marketCounts.urgent_above === 1 ? 'is' : 'are'} above budget but urgent &mdash; hospitals may consider you</p>
+                      <p style={{ fontSize: '13px', color: 'var(--deep-navy)' }}>🔴 {marketCounts.below} {marketCounts.below === 1 ? 'has a maximum rate' : 'have maximum rates'} below your requested rate</p>
+                      {marketCounts.below > 0 && (
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px', lineHeight: 1.6 }}>
+                          Want more opportunities? Consider adjusting your desired pay.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px', lineHeight: 1.6 }}>
+                      No open opportunities to compare against yet. We&rsquo;ll show how your pay fits as hospitals post roles.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '4px' }}>
+                  You choose your desired pay; hospitals choose the opportunities that fit their
+                  needs and budgets. Set yours to see how it fits the market.
+                </p>
+              )}
+              <Link to="/nurse/profile" style={{ display: 'inline-block', marginTop: '12px', fontSize: '11px', color: 'var(--sky-blue)', fontWeight: '500', letterSpacing: '0.05em', textTransform: 'uppercase', textDecoration: 'none' }}>
+                {myRate?.desired_hourly != null ? 'Change desired pay' : 'Set your desired pay'} &rarr;
               </Link>
             </div>
 
@@ -300,7 +334,7 @@ export default function NurseDashboard() {
                         </span>
                       </div>
                       <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {app.jobs?.city}, {app.jobs?.state} · {app.jobs?.shift_type} · {app.jobs?.pay_rate && `$${app.jobs.pay_rate}/hr`}
+                        {[`${app.jobs?.city || ''}, ${app.jobs?.state || ''}`, app.jobs?.shift_type].filter(Boolean).join(' · ')}
                       </p>
                       <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                         Applied {new Date(app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -318,20 +352,20 @@ export default function NurseDashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
             <div>
               <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '22px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '4px' }}>
-                {recommendations.length > 0 ? 'AI-Matched Opportunities' : 'Open Positions'}
+                Matched Opportunities
               </h3>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {recommendations.length > 0 ? 'Matched to your specialty and availability' : 'Latest active jobs on the platform'}
+                Ranked by specialty, licence state, certifications, availability, experience and pay fit
               </p>
             </div>
             <Link to="/jobs" style={{ fontSize: '12px', color: 'var(--sky-blue)' }}>Browse all →</Link>
           </div>
 
-          {jobs.length === 0 ? (
+          {recommendations.length === 0 ? (
             <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px', padding: '32px' }}>No open positions at the moment. Check back soon.</p>
           ) : (
             <div className="cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-              {jobs.map(job => (
+              {recommendations.map(job => (
                 <div key={job.id} style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '20px' }}>
                   <div style={{ fontSize: '11px', color: 'var(--warm-gold)', fontWeight: '500', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px' }}>
                     {job.specialty}
@@ -342,9 +376,15 @@ export default function NurseDashboard() {
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
                     {job.employer_profiles?.org_name} · {job.city}, {job.state}
                   </p>
+                  {job.fit_label && (
+                    <div style={{ marginBottom: '10px' }}><FitBadge label={job.fit_label} compact /></div>
+                  )}
+                  {job.match_reasons?.length > 0 && (
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>{job.match_reasons.join(' · ')}</p>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)' }}>
-                      {job.pay_rate && `$${job.pay_rate}`}<span style={{ fontSize: '11px', fontFamily: 'DM Sans', fontWeight: '300', color: 'var(--text-muted)' }}>{job.pay_rate && '/hr'}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                      {job.match_score}% match
                     </span>
                     <Link to={`/jobs?job=${job.id}`} style={{ padding: '6px 12px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '2px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                       Apply

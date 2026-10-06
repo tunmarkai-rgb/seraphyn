@@ -1,9 +1,14 @@
-// Nurse rate -> employer bill rate.
+// Transparent marketplace pricing (Kundayi, 2026-10-06):
 //
-// CONFIDENTIALITY CONTRACT: no route may ever spread a raw `nurse_rates` row
-// into an employer-facing response. Employers get `employerRateShape()` and
-// nothing else. The nurse's own rate, the markup percentage, and the margin are
-// admin-only. See docs/NURSE_RATES.sql.
+//   nurse's desired pay + flat Seraphyn agency fee = hospital bill rate
+//
+// The fee and the split are public by design: hospitals see nurse pay, fee and
+// bill rate; nurses see the bill rate their pay produces. What stays private is
+// a hospital's own budget per job (job_budgets), which nurses only ever see as
+// a fit label -- see server/lib/matching.js and docs/MARKETPLACE_PRICING.sql.
+//
+// Still admin-only: the audit trail (rate history, who overrode what and why)
+// and raw nurse_rates rows. Routes return the shapes below, never a raw row.
 //
 // Scope is per-diem / contract hourly. Direct hire uses the separate
 // placement-fee model described in the signed agreements.
@@ -14,6 +19,9 @@ const SETTINGS_KEY = 'per_diem_billing'
 const CACHE_TTL_MS = 60 * 1000
 
 const FALLBACK_BOUNDS = { min_nurse_rate: 15, max_nurse_rate: 400 }
+// Used only until docs/MARKETPLACE_PRICING.sql has added agency_fee to the
+// settings row, so a deploy that lands first still prices at Kundayi's $17.
+const DEFAULT_AGENCY_FEE = 17
 
 let cache = { value: null, fetchedAt: 0 }
 
@@ -33,30 +41,26 @@ async function getBillingSettings() {
     .single()
 
   if (error || !data?.value) {
-    // Fail closed. Defaulting the markup to zero would publish the nurse's own
-    // rate to employers as the bill rate, which is the exact failure this
-    // feature exists to prevent.
+    // Fail closed: without the settings row there is no agreed fee, and a bill
+    // rate quoted without one would undercharge every placement.
     throw new Error(
       `Billing settings row "${SETTINGS_KEY}" is missing; refusing to compute a bill rate`
     )
   }
 
-  cache = { value: data.value, fetchedAt: Date.now() }
-  return data.value
+  const value = { agency_fee: DEFAULT_AGENCY_FEE, ...data.value }
+  cache = { value, fetchedAt: Date.now() }
+  return value
 }
 
 function validateBillingSettings(input) {
   const errors = []
-  const markup = Number(input?.markup_pct)
-  const increment = Number(input?.rounding_increment)
+  const fee = Number(input?.agency_fee)
   const min = Number(input?.min_nurse_rate)
   const max = Number(input?.max_nurse_rate)
 
-  if (!Number.isFinite(markup) || markup <= 0 || markup > 500) {
-    errors.push('markup_pct must be a number greater than 0 and no more than 500')
-  }
-  if (!Number.isFinite(increment) || increment <= 0 || increment > 100) {
-    errors.push('rounding_increment must be a number greater than 0 and no more than 100')
+  if (!Number.isFinite(fee) || fee <= 0 || fee > 500) {
+    errors.push('agency_fee must be a dollar amount greater than 0 and no more than 500')
   }
   if (!Number.isFinite(min) || min <= 0) {
     errors.push('min_nurse_rate must be a number greater than 0')
@@ -74,8 +78,7 @@ function validateBillingSettings(input) {
     valid: true,
     errors: [],
     value: {
-      markup_pct: round2(markup),
-      rounding_increment: round2(increment),
+      agency_fee: round2(fee),
       min_nurse_rate: round2(min),
       max_nurse_rate: round2(max)
     }
@@ -93,69 +96,67 @@ function effectiveNurseRate(rateRow) {
   return rate === null || rate === undefined ? null : Number(rate)
 }
 
-function resolveMarkupPct(rateRow, settings) {
-  const override = rateRow?.markup_pct_override
-  if (override !== null && override !== undefined) return Number(override)
-  return Number(settings.markup_pct)
+function resolveAgencyFee(settings) {
+  const fee = Number(settings?.agency_fee ?? DEFAULT_AGENCY_FEE)
+  if (!Number.isFinite(fee) || fee <= 0) {
+    throw new Error('per_diem_billing.agency_fee must be greater than zero')
+  }
+  return round2(fee)
 }
 
-// Rounds UP to the configured increment so a quoted rate never lands below the
-// margin floor. Coarse rounding also widens the window an employer would have
-// to guess through to recover the nurse's rate from the bill rate.
+// Flat fee, no rounding: $65 desired pay + $17 = $82, exactly as quoted to the
+// nurse on their profile.
 function computeBillRate(rateRow, settings) {
   const rate = effectiveNurseRate(rateRow)
   if (rate === null) return null
-
-  const markup = resolveMarkupPct(rateRow, settings)
-  if (!Number.isFinite(markup) || markup <= 0) {
-    throw new Error('per_diem_billing.markup_pct must be greater than zero')
-  }
-
-  const gross = rate * (1 + markup / 100)
-  const increment = Number(settings.rounding_increment)
-
-  if (!Number.isFinite(increment) || increment <= 0) return round2(gross)
-  return round2(Math.ceil(gross / increment) * increment)
+  return round2(rate + resolveAgencyFee(settings))
 }
 
 // --- Response shapes -------------------------------------------------------
 
-// Employer-facing. Carries the bill rate and nothing that could be worked
-// backwards into the nurse's rate.
-function employerRateShape(rateRow, settings) {
-  const billRate = computeBillRate(rateRow, settings)
-  return { bill_rate: billRate, has_rate: billRate !== null }
+// The public breakdown, shown to hospitals on every nurse.
+function rateBreakdown(rateRow, settings) {
+  const nursePay = effectiveNurseRate(rateRow)
+  const fee = resolveAgencyFee(settings)
+  return {
+    has_rate: nursePay !== null,
+    nurse_pay: nursePay,
+    agency_fee: fee,
+    bill_rate: nursePay === null ? null : round2(nursePay + fee)
+  }
 }
 
-// Admin-facing. The only shape that may contain the nurse rate or the markup.
+// Employer-facing.
+function employerRateShape(rateRow, settings) {
+  return rateBreakdown(rateRow, settings)
+}
+
+// Admin-facing: the breakdown plus where the rate came from.
 function adminRateShape(rateRow, settings) {
-  const nurseRate = effectiveNurseRate(rateRow)
-  const billRate = computeBillRate(rateRow, settings)
+  const breakdown = rateBreakdown(rateRow, settings)
 
   return {
-    has_rate: nurseRate !== null,
-    nurse_rate: nurseRate,
+    ...breakdown,
+    nurse_rate: breakdown.nurse_pay,
     desired_hourly: rateRow?.desired_hourly ?? null,
     admin_hourly: rateRow?.admin_hourly ?? null,
     previous_hourly: rateRow?.previous_hourly ?? null,
-    markup_pct: rateRow ? resolveMarkupPct(rateRow, settings) : Number(settings.markup_pct),
-    markup_pct_override: rateRow?.markup_pct_override ?? null,
-    bill_rate: billRate,
-    margin_per_hour:
-      nurseRate !== null && billRate !== null ? round2(billRate - nurseRate) : null,
+    margin_per_hour: breakdown.has_rate ? breakdown.agency_fee : null,
     rate_source: rateRow?.rate_source ?? null,
     updated_at: rateRow?.updated_at ?? null
   }
 }
 
-// Nurse-facing. Shows the nurse their own rate and whether admin has overridden
-// it. Never the bill rate, never the markup.
+// Nurse-facing: their desired pay and the hospital bill rate it produces.
 function nurseRateShape(rateRow, settings) {
+  const breakdown = rateBreakdown(rateRow, settings)
   return {
     desired_hourly: rateRow?.desired_hourly ?? null,
-    effective_hourly: effectiveNurseRate(rateRow),
+    effective_hourly: breakdown.nurse_pay,
     is_admin_overridden:
       rateRow?.admin_hourly !== null && rateRow?.admin_hourly !== undefined,
+    agency_fee: breakdown.agency_fee,
+    bill_rate: breakdown.bill_rate,
     min_rate: Number(settings?.min_nurse_rate ?? FALLBACK_BOUNDS.min_nurse_rate),
     max_rate: Number(settings?.max_nurse_rate ?? FALLBACK_BOUNDS.max_nurse_rate),
     updated_at: rateRow?.updated_at ?? null
@@ -232,13 +233,16 @@ async function loadRateRow(nurseId) {
 
 module.exports = {
   SETTINGS_KEY,
+  DEFAULT_AGENCY_FEE,
+  round2,
   getBillingSettings,
   invalidateBillingSettingsCache,
   validateBillingSettings,
   validateHourlyRate,
   effectiveNurseRate,
-  resolveMarkupPct,
+  resolveAgencyFee,
   computeBillRate,
+  rateBreakdown,
   employerRateShape,
   adminRateShape,
   nurseRateShape,

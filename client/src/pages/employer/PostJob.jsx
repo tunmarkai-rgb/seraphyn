@@ -3,11 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import Navbar from '../../components/Navbar'
-import { SPECIALTIES, US_STATES } from '../../lib/constants'
+import { SPECIALTIES, URGENCY_OPTIONS, US_STATES } from '../../lib/constants'
+import { apiRequest } from '../../lib/api'
+import { formatHourly } from '../../lib/format'
+import { usePricing } from '../../lib/pricing'
 
 export default function PostJob() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const pricing = usePricing()
   const [empProfileId, setEmpProfileId] = useState(null)
   const [postingType, setPostingType] = useState('job')
   const [saving, setSaving] = useState(false)
@@ -15,7 +19,8 @@ export default function PostJob() {
 
   const [jobForm, setJobForm] = useState({
     title: '', specialty: '', city: '', state: '',
-    shift_type: '', pay_rate: '', contract_length: '',
+    shift_type: '', contract_length: '',
+    target_bill_rate: '', max_bill_rate: '', urgency: 'standard',
     description: '', requirements: ''
   })
 
@@ -54,22 +59,24 @@ export default function PostJob() {
     setError('')
     setSaving(true)
     try {
-      const { error: err } = await supabase.from('jobs').insert({
-        employer_id: empProfileId,
-        title: jobForm.title,
-        specialty: jobForm.specialty,
-        city: jobForm.city,
-        state: jobForm.state,
-        location: `${jobForm.city}, ${jobForm.state}`,
-        shift_type: jobForm.shift_type,
-        pay_rate: jobForm.pay_rate ? parseFloat(jobForm.pay_rate) : null,
-        contract_length: jobForm.contract_length,
-        description: jobForm.description,
-        requirements: jobForm.requirements,
-        status: 'active',
-        expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+      // Through the API, not Supabase: the budget goes to a table nurses
+      // cannot read (job_budgets), which only the server can write.
+      await apiRequest('/api/jobs', {
+        method: 'POST',
+        body: {
+          title: jobForm.title,
+          specialty: jobForm.specialty,
+          city: jobForm.city,
+          state: jobForm.state,
+          shift_type: jobForm.shift_type,
+          contract_length: jobForm.contract_length,
+          description: jobForm.description,
+          requirements: jobForm.requirements,
+          target_bill_rate: jobForm.target_bill_rate === '' ? null : Number(jobForm.target_bill_rate),
+          max_bill_rate: jobForm.max_bill_rate === '' ? null : Number(jobForm.max_bill_rate),
+          urgency: jobForm.urgency
+        }
       })
-      if (err) throw err
       navigate('/employer/dashboard')
     } catch (err) {
       setError(err.message)
@@ -186,11 +193,40 @@ export default function PostJob() {
                     </select>
                   </div>
                 </div>
-                <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Pay Rate ($/hr)</label>
-                    <input name="pay_rate" type="number" min="0" step="0.01" value={jobForm.pay_rate} onChange={handleJob} style={inputStyle} placeholder="e.g. 78.00" />
+                <div style={{ padding: '18px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px' }}>
+                  <p style={{ ...labelStyle, color: 'var(--deep-navy)', marginBottom: '4px' }}>Your Staffing Budget</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '14px' }}>
+                    Bill rates are each nurse&rsquo;s desired pay + the {formatHourly(pricing.agency_fee)} Seraphyn fee.
+                    We use your budget to sort nurses into within target, within maximum and above
+                    budget. Nurses never see these numbers &mdash; only whether they fit.
+                  </p>
+                  <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '14px' }}>
+                    <div>
+                      <label style={labelStyle}>Target Bill Rate ($/hr)</label>
+                      <input name="target_bill_rate" type="number" min="1" step="0.5" value={jobForm.target_bill_rate} onChange={handleJob} style={inputStyle} placeholder="e.g. 85" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Maximum Bill Rate ($/hr) *</label>
+                      <input name="max_bill_rate" type="number" min="1" step="0.5" value={jobForm.max_bill_rate} onChange={handleJob} required style={inputStyle} placeholder="e.g. 95" />
+                    </div>
                   </div>
+                  {jobForm.target_bill_rate !== '' && jobForm.max_bill_rate !== '' && Number(jobForm.target_bill_rate) > Number(jobForm.max_bill_rate) && (
+                    <p style={{ fontSize: '12px', color: '#B43C3C', marginBottom: '12px' }}>The target can&rsquo;t be higher than the maximum.</p>
+                  )}
+                  <label style={labelStyle}>How urgently do you need this position filled?</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {URGENCY_OPTIONS.map((option) => (
+                      <label key={option.value} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', background: 'white', border: `1px solid ${jobForm.urgency === option.value ? 'var(--deep-navy)' : 'var(--border)'}`, borderRadius: '2px', cursor: 'pointer' }}>
+                        <input type="radio" name="urgency" value={option.value} checked={jobForm.urgency === option.value} onChange={handleJob} style={{ marginTop: '3px' }} />
+                        <span>
+                          <span style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--deep-navy)' }}>{option.label}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{option.help}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
                     <label style={labelStyle}>Contract Length</label>
                     <select name="contract_length" value={jobForm.contract_length} onChange={handleJob} style={inputStyle}>
@@ -263,8 +299,11 @@ export default function PostJob() {
                   <label style={labelStyle}>Bill Rate You&rsquo;ll Pay ($/hr)</label>
                   <input name="hourly_rate" type="number" min="0" step="0.01" value={shiftForm.hourly_rate} onChange={handleShift} style={inputStyle} placeholder="e.g. 85.00" />
                   <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
-                    Your all-in hourly cost. Seraphyn handles nurse compensation
-                    separately, so this is not what the nurse is paid.
+                    Your all-in hourly cost: the nurse&rsquo;s pay plus the
+                    {' '}{formatHourly(pricing.agency_fee)} Seraphyn fee.
+                    {shiftForm.hourly_rate !== '' && Number(shiftForm.hourly_rate) > Number(pricing.agency_fee)
+                      ? ` At ${formatHourly(Number(shiftForm.hourly_rate))}, the nurse is paid ${formatHourly(Number(shiftForm.hourly_rate) - Number(pricing.agency_fee))}.`
+                      : ''}
                   </p>
                 </div>
                 <div>

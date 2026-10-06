@@ -44,7 +44,7 @@ Two-sided healthcare staffing marketplace.
 7. Supabase secret credentials stay server-only; Supabase publishable key stays frontend-safe only.
 8. Build must pass before closeout: `npm run build` in `client/`.
 9. Supabase Auth currently owns signup confirmation and password reset delivery; those auth emails are branded and sent through Resend SMTP, not GHL.
-10. Nurse rates and the agency markup are confidential. They live in `nurse_rates` and `app_settings`, both server-only. Employers see only a computed bill rate; never add a rate column to `nurse_profiles` or a rate field to any employer-facing payload.
+10. Pricing is transparent by Kundayi's decision (2026-10-06): **nurse's desired pay + flat Seraphyn fee (default $17, editable at `/admin/settings`) = hospital bill rate**. Hospitals see the full breakdown and nurses see the bill rate their pay produces. What stays private is each hospital's **budget per job** (target/maximum bill rate in `job_budgets`): nurses only ever see a coarse fit label, never the number. `job_budgets` is a separate table because `jobs` is nurse-readable and RLS is row-level; never put a budget column on `jobs` and never write the deprecated `jobs.pay_rate`. Raw `nurse_rates` rows and rate history stay server/admin-only.
 11. The repo no longer keeps the top-level browser test suite or `tmp/` scratch artifacts; if new QA automation is added, document it explicitly before checking it in.
 12. Internal operational alerts for new signups, nurse 100% completion, and employer agreement completion are routed to `info@seraphyncare.com`.
 13. Portal messaging supports both application threads and direct user-to-user threads. Direct threads store `messages.application_id = null`.
@@ -149,7 +149,7 @@ Behavior notes:
 - `nurse.signup_confirmed` is fired after email confirmation succeeds, not immediately at signup creation
 - The public homepage at `/` is guest-facing only; signed-in nurses/employers are redirected to their dashboards and admins to `/admin`
 - The public nurse directory at `/nurses` is served by `GET /api/nurses/directory` and **intentionally shows approved nurses to signed-out guests** (first name, specialty, experience, certifications; no last name, no bio, no rate). Kundayi approved this on 2026-09-08. Before that route existed the page read `nurse_profiles` with the publishable key and rendered empty, because live RLS returns no rows to the `anon` role — do not treat the guest-visible directory as a regression
-- Bill rates on `/nurses` and `/nurses/:id` are shown only to fully-onboarded employers and admins; unapproved employers see `Unlocks after approval`, and guests and nurses see no rate row at all
+- The rate breakdown (desired pay + fee = hospital rate) on `/nurses` and `/nurses/:id` is shown only to fully-onboarded employers and admins; unapproved employers see `Unlocks after approval`, and guests and nurses see no rate row at all. (The fee amount itself is public via `GET /api/pricing`.)
 
 Current retained baseline accounts after cleanup:
 
@@ -266,12 +266,15 @@ Current production n8n state:
 - GHL workflow docs aligned to offline billing
 - n8n docs aligned to live M2 scope
 - Approval and application transitions routed through server hooks where needed
-- Nurse self-set hourly rates with an employer-facing agency markup:
-  - nurses set one optional rate on their profile; admin can override it with a required reason
-  - employers see only `bill_rate = nurse_rate x (1 + markup)`, rounded up to the configured increment
-  - the markup is a single global percentage (default 30%), editable at `/admin/settings`
+- Transparent marketplace pricing and matching (Kundayi, 2026-10-06; replaced the confidential 30% markup):
+  - nurses set an optional **desired pay**; admin can override it with a required reason
+  - `bill_rate = desired pay + agency_fee` (flat, default $17, no rounding), shown as a breakdown to hospitals and as "your potential hospital bill rate" to nurses
   - per-diem/contract hourly only; direct hire keeps its 10% placement-fee model
-  - `GET /api/nurses/directory` replaced the employer directory's direct Supabase query
+  - job posts carry a target and maximum bill rate (`job_budgets`, nurse-unreadable) and an urgency (`standard | urgent | critical` on `jobs`)
+  - the directory compares nurses against one of the employer's jobs or a typed budget: 🟢 within target / 🟡 within max / above budget, ranked by a match score in `server/lib/matching.js` (specialty, rate fit, licence state, certifications, availability, experience, urgency). Rate is a matching variable, never a filter; above-budget nurses get "Consider Anyway", which opens Request This Nurse
+  - nurses see a market-response card (fits / above budget but urgent / below their rate), fit labels on jobs, and scored recommendations via `GET /api/nurses/self/market`
+  - nurse requests and per-diem shifts snapshot `agency_fee_snapshot`; shifts warn when Seraphyn earns less than the fee
+  - schema: [docs/MARKETPLACE_PRICING.sql](docs/MARKETPLACE_PRICING.sql)
 - Employer-initiated nurse requests ("Request this nurse"):
   - employers request a specific nurse; admin reviews, sets the nurse's offered rate, then presents it
   - the nurse sees nothing until presented, then accepts or declines directly with no admin relay
@@ -322,3 +325,5 @@ Current production n8n state:
 | [docs/NURSE_REQUESTS.sql](docs/NURSE_REQUESTS.sql) | Employer-initiated nurse request schema (hand-apply in Supabase) |
 | [docs/PER_DIEM_SHIFT_RATES.sql](docs/PER_DIEM_SHIFT_RATES.sql) | Per-diem shift nurse pay + markup snapshot columns (hand-apply in Supabase) |
 | [docs/LEADS.sql](docs/LEADS.sql) | GHL lead intake table for the form → portal handoff (hand-apply in Supabase) |
+| [docs/MARKETPLACE_PRICING.sql](docs/MARKETPLACE_PRICING.sql) | Flat agency fee, job budgets + urgency, fee snapshots (hand-apply in Supabase) |
+| [docs/GHL_WORKFLOW_PROMPTS.md](docs/GHL_WORKFLOW_PROMPTS.md) | Paste-ready prompts for building the remaining GHL workflows |

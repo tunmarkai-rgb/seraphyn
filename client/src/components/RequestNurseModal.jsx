@@ -4,9 +4,11 @@ import { formatHourly } from '../lib/format'
 import { SPECIALTIES, US_STATES, SHIFT_TYPE_OPTIONS } from '../lib/constants'
 
 // Employer-initiated request for a specific nurse. The rate panel restates the
-// bill rate already shown on the page -- never a nurse rate, never a markup --
-// and disclaims it so a directory figure does not become a contractual quote.
-export default function RequestNurseModal({ nurse, employer, onClose, onSubmitted }) {
+// published breakdown (desired pay + Seraphyn fee = hospital rate) and
+// disclaims it so a directory figure does not become a contractual quote.
+// `aboveBudget` is set when the employer chose "Consider Anyway" on a nurse
+// above their stated maximum; the note says so, so the coordinator knows.
+export default function RequestNurseModal({ nurse, employer, aboveBudget = false, onClose, onSubmitted }) {
   const [form, setForm] = useState({
     engagement_type: 'per_diem',
     start_date: '',
@@ -16,7 +18,9 @@ export default function RequestNurseModal({ nurse, employer, onClose, onSubmitte
     specialty: nurse?.specialty || '',
     city: employer?.city || '',
     state: employer?.state || '',
-    employer_note: ''
+    employer_note: aboveBudget
+      ? "This nurse's rate is above our stated maximum, but we'd like to consider them."
+      : ''
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -196,12 +200,17 @@ export default function RequestNurseModal({ nurse, employer, onClose, onSubmitte
             <div style={{ padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', marginBottom: '18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
                 <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
-                  Indicative Bill Rate
+                  Indicative Hospital Rate
                 </span>
                 <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: '500', color: 'var(--deep-navy)' }}>
                   {nurse?.has_rate ? formatHourly(nurse.bill_rate) : 'To be confirmed'}
                 </span>
               </div>
+              {nurse?.has_rate && (
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  {formatHourly(nurse.nurse_pay)} nurse&rsquo;s desired pay + {formatHourly(nurse.agency_fee)} Seraphyn fee
+                </p>
+              )}
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 {nurse?.has_rate
                   ? 'Final rate is confirmed by your Seraphyn coordinator before the assignment starts.'

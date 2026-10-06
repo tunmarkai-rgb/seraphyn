@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react'
 import { formatHourly } from '../lib/format'
 
-// Admin-only. This is the one place nurse rate, markup and bill rate appear
-// together -- none of these figures may ever reach an employer or a nurse.
-// The bill rate derives live as you type so the margin consequence of an
-// override is visible before saving.
+// Admin control for a nurse's pay. The breakdown itself (pay + Seraphyn fee =
+// bill rate) is public; what is admin-only here is the override and its reason.
+// The bill rate derives live as you type.
 export default function AdminRatePanel({ rate, onSave, saving = false }) {
   const [override, setOverride] = useState(rate?.admin_hourly != null ? String(rate.admin_hourly) : '')
   const [reason, setReason] = useState('')
@@ -21,20 +20,18 @@ export default function AdminRatePanel({ rate, onSave, saving = false }) {
     setError('')
   }
 
-  const markupPct = Number(rate?.markup_pct ?? 0)
+  const agencyFee = Number(rate?.agency_fee ?? 0)
 
-  // Mirrors computeBillRate() in server/lib/rates.js: markup applied, then
-  // rounded up to the 50c increment. Preview only -- the server recomputes.
+  // Mirrors computeBillRate() in server/lib/rates.js: pay + flat fee.
+  // Preview only -- the server recomputes.
   const preview = useMemo(() => {
     const base = override.trim() !== ''
       ? Number(override)
       : rate?.desired_hourly != null ? Number(rate.desired_hourly) : null
 
-    if (base === null || !Number.isFinite(base) || base <= 0 || !markupPct) return null
-    const gross = base * (1 + markupPct / 100)
-    const billRate = Math.ceil(gross / 0.5) * 0.5
-    return { base, billRate, margin: Math.round((billRate - base) * 100) / 100 }
-  }, [override, rate, markupPct])
+    if (base === null || !Number.isFinite(base) || base <= 0 || !agencyFee) return null
+    return { base, billRate: Math.round((base + agencyFee) * 100) / 100 }
+  }, [override, rate, agencyFee])
 
   async function submit() {
     setError('')
@@ -90,22 +87,22 @@ export default function AdminRatePanel({ rate, onSave, saving = false }) {
   return (
     <div style={{ padding: '16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', marginBottom: '16px' }}>
       <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', fontWeight: '600', marginBottom: '14px' }}>
-        Rate &middot; Admin Only
+        Rate
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
         <div>
-          <p style={cellLabel}>Nurse Rate</p>
+          <p style={cellLabel}>Nurse Pay</p>
           <p style={cellValue}>{formatHourly(rate.nurse_rate, { empty: 'Not set' })}</p>
           <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
             {rate.admin_hourly != null ? 'admin override' : rate.desired_hourly != null ? 'nurse-set' : '—'}
           </p>
         </div>
         <div>
-          <p style={cellLabel}>Markup</p>
-          <p style={cellValue}>{markupPct ? `${markupPct}%` : '—'}</p>
+          <p style={cellLabel}>Seraphyn Fee</p>
+          <p style={cellValue}>{agencyFee ? formatHourly(agencyFee) : '—'}</p>
           <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {rate.markup_pct_override != null ? 'per-nurse' : 'platform default'}
+            flat, all nurses
           </p>
         </div>
         <div>
@@ -113,11 +110,9 @@ export default function AdminRatePanel({ rate, onSave, saving = false }) {
           <p style={{ ...cellValue, color: preview ? 'var(--deep-navy)' : 'var(--text-muted)' }}>
             {preview ? formatHourly(preview.billRate) : formatHourly(rate.bill_rate, { empty: '—' })}
           </p>
-          {preview && (
-            <p style={{ fontSize: '10px', color: preview.margin > 0 ? 'var(--success)' : '#B43C3C', marginTop: '2px' }}>
-              margin {formatHourly(preview.margin, { empty: '—' })}
-            </p>
-          )}
+          <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            what hospitals see
+          </p>
         </div>
       </div>
 

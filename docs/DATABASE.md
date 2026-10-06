@@ -96,8 +96,9 @@
 | location | text | |
 | city | text | |
 | state | text | |
-| shift_type | text | `Per Diem` \| `Contract` \| `Permanent` |
-| pay_rate | numeric | |
+| shift_type | text | `day` \| `night` \| `evening` \| `mixed` (what the UI writes) |
+| urgency | text | `standard` \| `urgent` \| `critical`. Public |
+| pay_rate | numeric | DEPRECATED and always null: nurses can read `jobs`, so budgets live in `job_budgets` |
 | contract_length | text | |
 | description | text | |
 | requirements | text | |
@@ -105,6 +106,13 @@
 | expires_at | timestamptz | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
+
+### job_budgets
+A hospital's budget for one job: `job_id` (PK, FK jobs), `target_bill_rate`,
+`max_bill_rate`, timestamps. Separate from `jobs` because nurses can read
+`jobs` and RLS is row-level. RLS: the owning employer and admins may select;
+no write policies (writes go through `POST/PUT /api/jobs`); nurses get zero
+rows. Schema in [MARKETPLACE_PRICING.sql](MARKETPLACE_PRICING.sql).
 
 ### applications
 | Column | Type | Notes |
@@ -304,7 +312,7 @@ the person who filled in the form. RLS enabled, no policies: server-only.
 ## Operational Notes
 
 **Shift rates are snapshots, not live lookups.** `per_diem_shifts.nurse_pay_rate`
-and `markup_pct_snapshot` are written when a nurse is assigned and are never
+and `agency_fee_snapshot` (formerly `markup_pct_snapshot`) are written when a nurse is assigned and are never
 recomputed. `nurse_rates` holds the nurse's *current* rate, so pricing an
 already-worked shift from it would silently re-price history after any rate
 change. The same applies to `nurse_requests.quoted_bill_rate`.
@@ -317,12 +325,14 @@ Withdrawn), because the raw status would reveal whether the nurse has been
 asked yet. The transition map in `server/lib/nurse-requests.js` is keyed by
 actor role and is the only thing that may change a status.
 
-**Bill rates are computed, never stored.** `bill_rate = nurse_rate x (1 + markup)`,
-rounded up to `rounding_increment`, calculated in `server/lib/rates.js` on read.
-There is deliberately no rate column on `nurse_profiles`: employers can read that
-table, and Postgres RLS is row-level rather than column-level, so any rate column
-there would be readable by every employer that can see the row. A markup change
-therefore takes effect everywhere immediately with no backfill.
+**Bill rates are computed, never stored.** `bill_rate = desired pay + agency_fee`
+(flat, default $17, in `app_settings.per_diem_billing`), calculated in
+`server/lib/rates.js` on read. The breakdown is public to full-access employers
+since 2026-10-06; rates still live in `nurse_rates` rather than on
+`nurse_profiles` so the override audit trail stays server-side. A fee change
+takes effect everywhere immediately with no backfill, except quotes and booked
+shifts, which keep their `agency_fee_snapshot`. The old `markup_pct`,
+`rounding_increment` and `nurse_rates.markup_pct_override` are no longer read.
 
 **The live schema is not fully in this repo.** RLS is enabled and enforcing on
 `nurse_profiles`, `employer_profiles`, `applications` and `users` in production,

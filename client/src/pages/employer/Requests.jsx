@@ -145,11 +145,16 @@ export default function EmployerRequests() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
                     <div>
                       <span style={{ fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--warm-gold)', fontWeight: '500', marginRight: '8px' }}>
-                        Quoted Bill Rate
+                        Quoted Hospital Rate
                       </span>
                       <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '17px', color: 'var(--deep-navy)' }}>
                         {formatHourly(request.quoted_bill_rate, { empty: 'To be confirmed' })}
                       </span>
+                      {request.quoted_nurse_pay != null && request.quoted_agency_fee != null && (
+                        <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {formatHourly(request.quoted_nurse_pay)} nurse pay + {formatHourly(request.quoted_agency_fee)} Seraphyn fee
+                        </span>
+                      )}
                     </div>
                     {request.can_withdraw && (
                       <button

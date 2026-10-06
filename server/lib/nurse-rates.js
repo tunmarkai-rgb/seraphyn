@@ -5,7 +5,7 @@ const { supabase } = require('./../config/supabase')
 const {
   getBillingSettings,
   computeBillRate,
-  resolveMarkupPct,
+  resolveAgencyFee,
   loadRateRow
 } = require('./rates')
 
@@ -20,11 +20,11 @@ async function recordRateHistory({
   changedBy,
   reason = ''
 }) {
-  let markupPct = null
+  let agencyFee = null
   let billRate = null
 
   try {
-    markupPct = resolveMarkupPct(rateRow, settings)
+    agencyFee = resolveAgencyFee(settings)
     billRate = computeBillRate(rateRow, settings)
   } catch {
     // A history row is worth writing even if the derived figures can't be
@@ -37,7 +37,7 @@ async function recordRateHistory({
     field,
     old_value: oldValue ?? null,
     new_value: newValue ?? null,
-    markup_pct_at_change: markupPct,
+    agency_fee_at_change: agencyFee,
     bill_rate_at_change: billRate,
     changed_by: changedBy || null,
     reason
@@ -90,49 +90,30 @@ async function setNurseDesiredRate(nurseId, hourlyRate, changedBy) {
   return updated
 }
 
-// Admin overrides the nurse's rate, and/or sets a per-nurse markup.
-async function setAdminRate(nurseId, { adminHourly, markupPctOverride }, changedBy, reason = '') {
+// Admin overrides the nurse's pay. (There is no per-nurse fee: the Seraphyn
+// fee is one public amount for everyone.)
+async function setAdminRate(nurseId, { adminHourly }, changedBy, reason = '') {
   const settings = await getBillingSettings()
   const existing = await loadRateRow(nurseId)
 
-  const patch = { rate_source: 'admin', updated_by: changedBy || null }
-  if (adminHourly !== undefined) {
-    patch.admin_hourly = adminHourly
-    patch.previous_hourly = existing?.admin_hourly ?? existing?.desired_hourly ?? null
-  }
-  if (markupPctOverride !== undefined) {
-    patch.markup_pct_override = markupPctOverride
-  }
+  const updated = await upsertRate(nurseId, {
+    rate_source: 'admin',
+    updated_by: changedBy || null,
+    admin_hourly: adminHourly,
+    previous_hourly: existing?.admin_hourly ?? existing?.desired_hourly ?? null
+  })
 
-  const updated = await upsertRate(nurseId, patch)
-
-  if (adminHourly !== undefined) {
-    await recordRateHistory({
-      nurseId,
-      source: 'admin',
-      field: 'admin_hourly',
-      oldValue: existing?.admin_hourly ?? null,
-      newValue: adminHourly,
-      rateRow: updated,
-      settings,
-      changedBy,
-      reason
-    })
-  }
-
-  if (markupPctOverride !== undefined) {
-    await recordRateHistory({
-      nurseId,
-      source: 'admin',
-      field: 'markup_pct_override',
-      oldValue: existing?.markup_pct_override ?? null,
-      newValue: markupPctOverride,
-      rateRow: updated,
-      settings,
-      changedBy,
-      reason
-    })
-  }
+  await recordRateHistory({
+    nurseId,
+    source: 'admin',
+    field: 'admin_hourly',
+    oldValue: existing?.admin_hourly ?? null,
+    newValue: adminHourly,
+    rateRow: updated,
+    settings,
+    changedBy,
+    reason
+  })
 
   return updated
 }

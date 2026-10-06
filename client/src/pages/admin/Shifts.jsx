@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import { formatHourly } from '../../lib/format'
+import { usePricing } from '../../lib/pricing'
 
 const STATUS_COLORS = {
   open:       { label: 'Open',       bg: 'rgba(45,122,79,0.1)',    color: 'var(--success)' },
@@ -11,6 +12,7 @@ const STATUS_COLORS = {
 }
 
 export default function AdminShifts() {
+  const pricing = usePricing()
   const [shifts, setShifts] = useState([])
   const [filter, setFilter] = useState('open')
   const [loading, setLoading] = useState(true)
@@ -133,14 +135,15 @@ export default function AdminShifts() {
                   const pay = payValue === '' ? null : Number(payValue)
                   const bill = shift.hourly_rate != null ? Number(shift.hourly_rate) : null
                   const margin = pay != null && bill != null ? Math.round((bill - pay) * 100) / 100 : null
-                  const marginPct = margin != null && pay ? Math.round((margin / pay) * 100) : null
+                  // Below the fee in force at booking (or today's fee) is "thin".
+                  const fee = shift.agency_fee_snapshot != null ? Number(shift.agency_fee_snapshot) : Number(pricing.agency_fee)
                   const belowCost = margin != null && margin <= 0
-                  const thin = margin != null && !belowCost && marginPct != null && marginPct < 15
+                  const thin = margin != null && !belowCost && fee > 0 && margin < fee
 
                   return (
                     <div style={{ padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', marginBottom: '12px' }}>
                       <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', fontWeight: '600', marginBottom: '12px' }}>
-                        Rate &middot; Admin Only
+                        Rate
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '12px' }}>
                         <div>
@@ -157,9 +160,9 @@ export default function AdminShifts() {
                           />
                         </div>
                         <div>
-                          <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Markup At Booking</p>
+                          <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>Seraphyn Fee</p>
                           <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '18px', fontWeight: '500', color: 'var(--deep-navy)' }}>
-                            {shift.markup_pct_snapshot != null ? `${shift.markup_pct_snapshot}%` : '—'}
+                            {formatHourly(fee, { empty: '—' })}
                           </p>
                         </div>
                         <div>
@@ -171,7 +174,9 @@ export default function AdminShifts() {
                             <p style={{ fontSize: '10px', marginTop: '2px', fontWeight: belowCost ? '600' : '400', color: belowCost ? '#B43C3C' : thin ? 'var(--warm-gold)' : 'var(--success)' }}>
                               {belowCost
                                 ? `⚠ Below cost (${formatHourly(margin)})`
-                                : `margin ${formatHourly(margin)}${marginPct != null ? ` (${marginPct}%)` : ''}`}
+                                : thin
+                                  ? `Seraphyn earns ${formatHourly(margin)}, under the ${formatHourly(fee)} fee`
+                                  : `Seraphyn earns ${formatHourly(margin)}`}
                             </p>
                           )}
                         </div>

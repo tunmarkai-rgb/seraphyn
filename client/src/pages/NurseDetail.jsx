@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import { apiRequest } from '../lib/api'
@@ -11,6 +11,10 @@ export default function NurseDetail() {
   const { id } = useParams()
   const { user, profile } = useAuth()
   const navigate = useNavigate()
+  // ?consider=1 arrives from the directory's "Consider Anyway" on a nurse whose
+  // rate is above the hospital's stated maximum.
+  const [searchParams] = useSearchParams()
+  const consideringAboveBudget = searchParams.get('consider') === '1'
   const [nurse, setNurse] = useState(null)
   const [empProfile, setEmpProfile] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -38,6 +42,14 @@ export default function NurseDetail() {
       void loadDocuments()
     }
   }, [id, isFullAccess, profile])
+
+  // Open the request form straight away for "Consider Anyway", once we know
+  // the employer may request and hasn't already.
+  const [autoOpened, setAutoOpened] = useState(false)
+  if (consideringAboveBudget && !autoOpened && isFullAccess && nurse && !myRequest && profile?.role === 'employer') {
+    setAutoOpened(true)
+    setRequestOpen(true)
+  }
 
   async function loadNurse() {
     try {
@@ -200,9 +212,13 @@ export default function NurseDetail() {
               ['Availability', availabilityLabel(nurse.availability) || 'Contact for details'],
               ['Experience', nurse.years_experience ? `${nurse.years_experience} years` : '-'],
               ['Shift Preference', shiftPreferenceLabel(nurse.shift_preference) || 'Flexible'],
-              // Bill rate, not nurse take-home. Only full-access employers and
-              // admins receive a rate from the API at all.
-              ...(canSeeRate ? [['Bill Rate', formatHourly(nurse.bill_rate)]] : []),
+              // The published breakdown. Only full-access employers and admins
+              // receive a rate from the API at all.
+              ...(canSeeRate
+                ? [['Hospital Rate', nurse.has_rate
+                    ? `${formatHourly(nurse.bill_rate)} (${formatHourly(nurse.nurse_pay)} desired pay + ${formatHourly(nurse.agency_fee)} Seraphyn fee)`
+                    : 'Rate on request']]
+                : []),
             ].map(([label, value]) => (
               <div key={label}>
                 <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '4px' }}>{label}</p>
@@ -282,6 +298,7 @@ export default function NurseDetail() {
         <RequestNurseModal
           nurse={nurse}
           employer={empProfile}
+          aboveBudget={consideringAboveBudget}
           onClose={() => setRequestOpen(false)}
           onSubmitted={(created) => setRequestOverride({ id: created.id, status_label: created.status_label })}
         />

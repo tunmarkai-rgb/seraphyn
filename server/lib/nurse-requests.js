@@ -1,9 +1,9 @@
 // Employer-initiated nurse requests: state machine and per-role response shapes.
 //
 // CONFIDENTIALITY CONTRACT: no route may return a raw nurse_requests row.
-//   * employerRequestShape -- never quoted internals beyond what the employer
-//     was already shown, never offered_nurse_rate, and a COARSE status.
-//   * nurseRequestShape    -- never quoted_bill_rate, never markup_pct_snapshot.
+//   * employerRequestShape -- the quote breakdown the employer was shown (nurse
+//     pay + fee = bill rate), never offered_nurse_rate, and a COARSE status.
+//   * nurseRequestShape    -- what the nurse is offered, never quoted_bill_rate.
 //   * adminRequestShape    -- everything.
 // See docs/NURSE_REQUESTS.sql.
 
@@ -97,8 +97,14 @@ function employerRequestShape(row, nurse = null) {
     nurse_specialty: nurse?.specialty || null,
     ...assignmentFields(row),
     employer_note: row.employer_note,
-    // The bill rate the employer was quoted -- they have already seen this.
+    // The breakdown the employer was quoted: nurse pay + Seraphyn fee = bill
+    // rate. (offered_nurse_rate, what admin later negotiates, is not included.)
     quoted_bill_rate: row.quoted_bill_rate,
+    quoted_agency_fee: row.agency_fee_snapshot ?? null,
+    quoted_nurse_pay:
+      row.quoted_bill_rate != null && row.agency_fee_snapshot != null
+        ? Math.round((Number(row.quoted_bill_rate) - Number(row.agency_fee_snapshot)) * 100) / 100
+        : null,
     status_label: EMPLOYER_STATUS_LABELS[row.status] || 'In Review',
     // Coarse flag so the UI can enable Withdraw without exposing raw status.
     can_withdraw: !isTerminal(row.status),
@@ -115,8 +121,7 @@ function nurseRequestShape(row, employer = null) {
     // Identity only once an admin has chosen to reveal it.
     facility_name: row.employer_visible_to_nurse ? employer?.org_name || null : null,
     employer_note: row.employer_note,
-    // What the nurse is paid. quoted_bill_rate and markup_pct_snapshot are
-    // deliberately absent.
+    // What the nurse is paid for this assignment.
     offered_nurse_rate: row.offered_nurse_rate,
     status: row.status,
     awaiting_response: row.status === 'presented',

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
+import { formatHourly } from '../../lib/format'
 
 export default function AdminJobs() {
   const [jobs, setJobs] = useState([])
@@ -62,7 +63,7 @@ export default function AdminJobs() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--warm-white)' }}>
-                {['Job Title', 'Organization', 'Location', 'Specialty', 'Pay', 'Status', 'Posted', 'Actions'].map(h => (
+                {['Job Title', 'Organization', 'Location', 'Specialty', 'Budget (Bill Rate)', 'Status', 'Posted', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', fontWeight: '500', borderBottom: '1px solid var(--border)' }}>{h}</th>
                 ))}
               </tr>
@@ -80,7 +81,14 @@ export default function AdminJobs() {
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--text-muted)' }}>{job.city}, {job.state}</td>
                     <td style={{ padding: '14px 16px', fontSize: '12px', color: 'var(--text-muted)' }}>{job.specialty}</td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--deep-navy)', fontFamily: 'Cormorant Garamond, serif' }}>
-                      {job.pay_rate ? `$${job.pay_rate}/hr` : '—'}
+                      {job.max_bill_rate != null
+                        ? (job.target_bill_rate != null && Number(job.target_bill_rate) !== Number(job.max_bill_rate)
+                            ? `${formatHourly(job.target_bill_rate)} – ${formatHourly(job.max_bill_rate)}`
+                            : `up to ${formatHourly(job.max_bill_rate)}`)
+                        : '—'}
+                      {job.urgency && job.urgency !== 'standard' && (
+                        <span style={{ display: 'block', fontFamily: 'DM Sans, sans-serif', fontSize: '10px', color: '#B43C3C', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{job.urgency}</span>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{ padding: '3px 8px', borderRadius: '2px', fontSize: '10px', fontWeight: '500', background: s.bg, color: s.color }}>{s.label}</span>

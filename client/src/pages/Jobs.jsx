@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
-import { SPECIALTIES, US_STATES } from '../lib/constants'
+import FitBadge from '../components/FitBadge'
+import { apiRequest } from '../lib/api'
+import { SPECIALTIES, US_STATES, urgencyLabel } from '../lib/constants'
 
 export default function Jobs() {
   const { user, profile } = useAuth()
@@ -17,9 +19,12 @@ export default function Jobs() {
   const [coverNote, setCoverNote] = useState('')
   const [applySuccess, setApplySuccess] = useState(false)
   const [nonNurseToast, setNonNurseToast] = useState(false)
+  // Nurse only: job id -> 'fits' | 'may_consider' | 'above_budget'. Hospitals'
+  // budgets themselves never reach the browser.
+  const [jobFit, setJobFit] = useState({})
 
   const [filters, setFilters] = useState({
-    specialty: '', state: '', shift_type: '', pay_min: '', pay_max: ''
+    specialty: '', state: '', shift_type: '', urgency: '', fit: ''
   })
 
   const loadNurseProfile = useCallback(async function loadNurseProfile(userId) {
@@ -41,10 +46,11 @@ export default function Jobs() {
     if (filters.specialty) result = result.filter(j => j.specialty === filters.specialty)
     if (filters.state) result = result.filter(j => j.state === filters.state)
     if (filters.shift_type) result = result.filter(j => j.shift_type === filters.shift_type)
-    if (filters.pay_min) result = result.filter(j => j.pay_rate && j.pay_rate >= parseFloat(filters.pay_min))
-    if (filters.pay_max) result = result.filter(j => j.pay_rate && j.pay_rate <= parseFloat(filters.pay_max))
+    if (filters.urgency) result = result.filter(j => (j.urgency || 'standard') === filters.urgency)
+    if (filters.fit === 'fits') result = result.filter(j => jobFit[j.id] === 'fits')
+    if (filters.fit === 'reachable') result = result.filter(j => jobFit[j.id] === 'fits' || jobFit[j.id] === 'may_consider')
     return result
-  }, [filters, jobs])
+  }, [filters, jobs, jobFit])
 
   useEffect(() => {
     let cancelled = false
@@ -65,8 +71,13 @@ export default function Jobs() {
     if (!user || profile?.role !== 'nurse') return undefined
     let cancelled = false
     ;(async () => {
-      const result = await loadNurseProfile(user.id)
-      if (cancelled || !result) return
+      const [result, market] = await Promise.all([
+        loadNurseProfile(user.id),
+        apiRequest('/api/nurses/self/market').catch(() => null)
+      ])
+      if (cancelled) return
+      if (market?.job_fit) setJobFit(market.job_fit)
+      if (!result) return
       setNurseProfileId(result.id)
       setAppliedIds(result.appliedIds)
     })()
@@ -78,7 +89,7 @@ export default function Jobs() {
   }
 
   function clearFilters() {
-    setFilters({ specialty: '', state: '', shift_type: '', pay_min: '', pay_max: '' })
+    setFilters({ specialty: '', state: '', shift_type: '', urgency: '', fit: '' })
   }
 
   async function submitApplication() {
@@ -168,13 +179,24 @@ export default function Jobs() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Pay Rate ($/hr)</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input name="pay_min" type="number" value={filters.pay_min} onChange={handleFilter} placeholder="Min" style={{ ...selectStyle, width: '50%' }} />
-                  <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>–</span>
-                  <input name="pay_max" type="number" value={filters.pay_max} onChange={handleFilter} placeholder="Max" style={{ ...selectStyle, width: '50%' }} />
-                </div>
+                <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Urgency</label>
+                <select name="urgency" value={filters.urgency} onChange={handleFilter} style={selectStyle}>
+                  <option value="">Any Urgency</option>
+                  <option value="standard">Standard</option>
+                  <option value="urgent">Urgent</option>
+                  <option value="critical">Critical</option>
+                </select>
               </div>
+              {profile?.role === 'nurse' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Your Desired Pay</label>
+                  <select name="fit" value={filters.fit} onChange={handleFilter} style={selectStyle}>
+                    <option value="">All roles</option>
+                    <option value="fits">Fits my desired pay</option>
+                    <option value="reachable">Fits, or urgent and may consider</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -214,10 +236,13 @@ export default function Jobs() {
                           </p>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          {job.pay_rate && (
-                            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '24px', fontWeight: '500', color: 'var(--deep-navy)' }}>
-                              ${job.pay_rate}<span style={{ fontSize: '12px', fontFamily: 'DM Sans', color: 'var(--text-muted)', fontWeight: '300' }}>/hr</span>
+                          {job.urgency && job.urgency !== 'standard' && (
+                            <div style={{ display: 'inline-block', marginBottom: '6px', padding: '3px 9px', borderRadius: '2px', fontSize: '10px', fontWeight: '600', letterSpacing: '0.08em', textTransform: 'uppercase', background: job.urgency === 'critical' ? 'rgba(180,60,60,0.1)' : 'rgba(200,169,110,0.18)', color: job.urgency === 'critical' ? '#B43C3C' : 'var(--warm-gold)' }}>
+                              {urgencyLabel(job.urgency)} need
                             </div>
+                          )}
+                          {jobFit[job.id] && (
+                            <div><FitBadge label={jobFit[job.id]} compact /></div>
                           )}
                         </div>
                       </div>

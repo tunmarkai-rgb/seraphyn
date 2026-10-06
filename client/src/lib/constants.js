@@ -65,3 +65,15 @@ export const NURSE_REQUEST_STATUS_LABELS = [
   'Not Available',
   'Withdrawn'
 ]
+
+// How urgently a hospital needs a role filled. Drives how the nurse directory
+// groups candidates against the job's budget (server/lib/matching.js).
+export const URGENCY_OPTIONS = [
+  { value: 'standard', label: 'Standard', help: "We'll prioritize nurses within your preferred rate." },
+  { value: 'urgent', label: 'Urgent', help: "We'll expand the matching pool to everyone within your maximum." },
+  { value: 'critical', label: 'Critical', help: 'Show qualified nurses above our preferred rate too.' }
+]
+
+export function urgencyLabel(value) {
+  return URGENCY_OPTIONS.find((option) => option.value === value)?.label || 'Standard'
+}

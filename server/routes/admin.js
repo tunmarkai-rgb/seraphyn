@@ -14,11 +14,12 @@ const {
   validateHourlyRate,
   adminRateShape,
   effectiveNurseRate,
-  resolveMarkupPct,
+  resolveAgencyFee,
   loadRateRow,
   loadRateRows
 } = require('../lib/rates')
 const { setAdminRate, readRateHistory } = require('../lib/nurse-rates')
+const { loadBudgets } = require('../lib/job-budgets')
 const {
   adminRequestShape,
   loadRequest,
@@ -132,7 +133,7 @@ router.get('/nurses/:id/rate/history', async (req, res) => {
 })
 
 // PUT /api/admin/nurses/:id/rate
-// body { admin_hourly?: number|null, markup_pct_override?: number|null, reason?: string }
+// body { admin_hourly?: number|null, reason?: string }
 router.put('/nurses/:id/rate', async (req, res) => {
   try {
     const { data: nurse } = await supabase
@@ -151,19 +152,6 @@ router.put('/nurses/:id/rate', async (req, res) => {
       const check = validateHourlyRate(body.admin_hourly, settings)
       if (!check.valid) return res.status(400).json({ error: check.error })
       patch.adminHourly = check.value
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'markup_pct_override')) {
-      const raw = body.markup_pct_override
-      if (raw === null || raw === undefined || raw === '') {
-        patch.markupPctOverride = null
-      } else {
-        const pct = Number(raw)
-        if (!Number.isFinite(pct) || pct <= 0 || pct > 500) {
-          return res.status(400).json({ error: 'Markup override must be between 0 and 500' })
-        }
-        patch.markupPctOverride = Math.round(pct * 100) / 100
-      }
     }
 
     if (!Object.keys(patch).length) {
@@ -193,8 +181,9 @@ router.get('/settings/per-diem-billing', async (req, res) => {
 })
 
 // PUT /api/admin/settings/per-diem-billing
-// Bill rates are computed on read, so a markup change takes effect everywhere
-// immediately -- there is no backfill step.
+// Bill rates are computed on read, so a fee change takes effect everywhere
+// immediately -- except quotes and booked shifts, which keep the fee
+// snapshotted when they were made.
 router.put('/settings/per-diem-billing', async (req, res) => {
   try {
     const check = validateBillingSettings(req.body || {})
@@ -680,7 +669,7 @@ router.get('/shifts', async (req, res) => {
 // employer set it when posting the shift. Admin controls nurse pay and
 // assignment.
 const SHIFT_UPDATABLE_FIELDS = [
-  'status', 'admin_notes', 'nurse_id', 'nurse_pay_rate', 'markup_pct_snapshot'
+  'status', 'admin_notes', 'nurse_id', 'nurse_pay_rate', 'agency_fee_snapshot'
 ]
 
 router.put('/shifts/:id', async (req, res) => {
@@ -699,7 +688,7 @@ router.put('/shifts/:id', async (req, res) => {
     for (const field of SHIFT_UPDATABLE_FIELDS) {
       if (!Object.prototype.hasOwnProperty.call(body, field)) continue
 
-      if (field === 'nurse_pay_rate' || field === 'markup_pct_snapshot') {
+      if (field === 'nurse_pay_rate' || field === 'agency_fee_snapshot') {
         const raw = body[field]
         if (raw === null || raw === undefined || raw === '') {
           updates[field] = null
@@ -725,7 +714,7 @@ router.put('/shifts/:id', async (req, res) => {
         const nurseRate = effectiveNurseRate(rateRow)
         if (nurseRate !== null) {
           updates.nurse_pay_rate = nurseRate
-          updates.markup_pct_snapshot = resolveMarkupPct(rateRow, settings)
+          updates.agency_fee_snapshot = resolveAgencyFee(settings)
         }
       } catch (rateError) {
         console.error('Could not prefill nurse pay for shift:', rateError.message)
@@ -745,16 +734,20 @@ router.put('/shifts/:id', async (req, res) => {
 
     if (error) return res.status(500).json({ error: error.message })
 
-    // Thin or negative margin is a deliberate business call sometimes, so warn
+    // Under the standard fee is sometimes a deliberate business call, so warn
     // rather than refuse -- but make it impossible to miss.
     const billRate = Number(data.hourly_rate)
     const payRate = Number(data.nurse_pay_rate)
     let rateWarning = null
     if (Number.isFinite(billRate) && Number.isFinite(payRate) && payRate > 0) {
+      let fee = Number(data.agency_fee_snapshot)
+      if (!Number.isFinite(fee) || fee <= 0) {
+        try { fee = resolveAgencyFee(await getBillingSettings()) } catch { fee = null }
+      }
       if (payRate >= billRate) {
         rateWarning = `Nurse pay ${payRate} is at or above the ${billRate} bill rate — this shift loses money.`
-      } else if (billRate < payRate * 1.15) {
-        rateWarning = `Margin is under 15% on this shift.`
+      } else if (fee && billRate - payRate < fee) {
+        rateWarning = `Seraphyn earns ${Math.round((billRate - payRate) * 100) / 100}/hr on this shift, under the standard ${fee}/hr fee.`
       }
     }
 
@@ -784,7 +777,7 @@ router.get('/shifts/nurse-options', async (req, res) => {
       return res.json(nurses.map((n) => ({
         ...n,
         current_rate: effectiveNurseRate(rateRows.get(n.id) || null),
-        markup_pct: resolveMarkupPct(rateRows.get(n.id) || null, settings)
+        agency_fee: resolveAgencyFee(settings)
       })))
     } catch (rateError) {
       console.error('Could not attach rates to nurse options:', rateError.message)
@@ -809,7 +802,18 @@ router.get('/jobs', async (req, res) => {
 
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+
+  let budgets = new Map()
+  try {
+    budgets = await loadBudgets((data || []).map((job) => job.id))
+  } catch (budgetError) {
+    console.error('Could not attach job budgets:', budgetError.message)
+  }
+  res.json((data || []).map((job) => ({
+    ...job,
+    target_bill_rate: budgets.get(job.id)?.target_bill_rate ?? null,
+    max_bill_rate: budgets.get(job.id)?.max_bill_rate ?? null
+  })))
 })
 
 // PUT /api/admin/jobs/:id/status

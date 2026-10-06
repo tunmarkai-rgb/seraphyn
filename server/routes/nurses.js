@@ -26,6 +26,8 @@ const { notifyAdmins } = require('../lib/notifications')
 const { employerHasFullAccess } = require('../lib/employer-access')
 const { extractDocxText, isDocx } = require('../lib/docx-text')
 const { extractDocText, isDoc } = require('../lib/doc-text')
+const { scoreMatch, groupForUrgency, normalizeBudget, normalizeUrgency, marketResponse, nurseFitLabel } = require('../lib/matching')
+const { loadBudgets, loadActiveJobsWithBudgets, publicJobShape } = require('../lib/job-budgets')
 const upload = multer({ storage: multer.memoryStorage() })
 
 // Columns a nurse (or admin) may write through PUT /api/nurses/:id. An
@@ -42,7 +44,7 @@ const NURSE_UPDATABLE_FIELDS = [
 const DIRECTORY_BASE_FIELDS =
   'id, first_name, specialty, years_experience, availability, shift_preference, certifications, profile_photo_url, approved_at'
 const DIRECTORY_FULL_FIELDS =
-  'id, first_name, last_name, specialty, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at'
+  'id, first_name, last_name, specialty, license_state, years_experience, availability, shift_preference, certifications, bio, profile_photo_url, approved_at'
 
 function isNurseUser(req) {
   return req.user?.role === 'nurse' || req.authUser?.user_metadata?.role === 'nurse'
@@ -112,9 +114,38 @@ router.get('/featured', async (req, res) => {
   res.json(data)
 })
 
+// What the directory compares nurses against: one of the employer's own jobs
+// (?job_id=) or a typed-in budget (?target=&max=&urgency=). Admins may pass any
+// job. Returns { job, budget, urgency } or { error, status }.
+async function resolveDirectoryComparison(req) {
+  const { job_id: jobId, target, max, urgency } = req.query || {}
+
+  if (jobId) {
+    const { data: job } = await supabase
+      .from('jobs')
+      .select('id, employer_id, title, specialty, state, requirements, urgency')
+      .eq('id', jobId)
+      .maybeSingle()
+    if (!job) return { error: 'Job not found', status: 404 }
+
+    if (req.user.role !== 'admin') {
+      const { data: ep } = await supabase.from('employer_profiles').select('id').eq('user_id', req.user.id).maybeSingle()
+      if (!ep || ep.id !== job.employer_id) return { error: 'Not your job', status: 403 }
+    }
+
+    const budgets = await loadBudgets([job.id])
+    const budget = normalizeBudget(budgets.get(job.id) || {})
+    return { job, budget, urgency: normalizeUrgency(urgency || job.urgency) }
+  }
+
+  const budget = normalizeBudget({ target, max })
+  return { job: null, budget, urgency: normalizeUrgency(urgency) }
+}
+
 // GET /api/nurses/directory — serves guests, nurses, employers and admins from
-// one handler. Bill rates are attached only for full-access employers and
-// admins; the nurse's own rate and the markup never appear in this payload.
+// one handler. The rate breakdown (nurse pay + Seraphyn fee = bill rate) is
+// attached for full-access employers and admins, who can also compare nurses
+// against one of their jobs or a typed budget (?job_id= / ?target=&max=&urgency=).
 router.get('/directory', optionalAuth, async (req, res) => {
   try {
     const role = req.user?.role
@@ -143,13 +174,46 @@ router.get('/directory', optionalAuth, async (req, res) => {
     try {
       const settings = await getBillingSettings()
       const rateRows = await loadRateRows(nurses.map((n) => n.id))
-
       const withRates = nurses.map((nurse) => ({
         ...nurse,
         ...employerRateShape(rateRows.get(nurse.id) || null, settings)
       }))
 
-      return res.json({ nurses: withRates, rates_visible: true })
+      const comparison = await resolveDirectoryComparison(req)
+      if (comparison.error) return res.status(comparison.status).json({ error: comparison.error })
+
+      if (!comparison.budget) {
+        return res.json({ nurses: withRates, rates_visible: true, agency_fee: settings.agency_fee, comparison: null })
+      }
+
+      // Rate is one matching input, not a filter: every nurse stays in the
+      // list, grouped and ordered by how well they fit this need.
+      const groupOrder = { primary: 0, secondary: 1, above_budget: 2 }
+      const matched = withRates
+        .map((nurse) => {
+          const match = scoreMatch({
+            nurse,
+            billRate: nurse.bill_rate,
+            job: comparison.job || {},
+            budget: comparison.budget,
+            urgency: comparison.urgency
+          })
+          return { ...nurse, match, group: groupForUrgency(match.fit, comparison.urgency) }
+        })
+        .sort((a, b) => groupOrder[a.group] - groupOrder[b.group] || b.match.score - a.match.score)
+
+      return res.json({
+        nurses: matched,
+        rates_visible: true,
+        agency_fee: settings.agency_fee,
+        comparison: {
+          job_id: comparison.job?.id || null,
+          job_title: comparison.job?.title || null,
+          target_bill_rate: comparison.budget.target,
+          max_bill_rate: comparison.budget.max,
+          urgency: comparison.urgency
+        }
+      })
     } catch (rateError) {
       console.error('Failed to attach directory rates:', rateError.message)
       return res.json({ nurses, rates_visible: false })
@@ -160,8 +224,58 @@ router.get('/directory', optionalAuth, async (req, res) => {
   }
 })
 
-// GET /api/nurses/self/rate — the nurse's own rate. Never returns the bill rate
-// or the markup.
+// GET /api/nurses/self/market — how the nurse's desired pay sits in the market:
+// their bill rate, counts of open jobs it fits, a fit label per job, and the
+// best-matched jobs. Never a hospital's actual budget -- only counts and labels.
+router.get('/self/market', requireSessionUser, async (req, res) => {
+  try {
+    if (!isNurseUser(req)) {
+      return res.status(403).json({ error: 'Nurse access required' })
+    }
+
+    const profile = await ensureCurrentNurseProfile(req)
+    const settings = await getBillingSettings()
+    const rate = nurseRateShape(await loadRateRow(profile.id), settings)
+    const jobs = await loadActiveJobsWithBudgets()
+
+    const jobFit = {}
+    for (const job of jobs) {
+      const label = nurseFitLabel(rate.bill_rate, job)
+      if (label) jobFit[job.id] = label
+    }
+
+    const recommendations = jobs
+      .map((job) => ({
+        job,
+        match: scoreMatch({ nurse: profile, billRate: rate.bill_rate, job, budget: job.budget, urgency: job.urgency })
+      }))
+      .sort((a, b) => b.match.score - a.match.score)
+      .slice(0, 3)
+      .map(({ job, match }) => ({
+        ...publicJobShape(job),
+        match_score: match.score,
+        match_reasons: match.reasons.filter((reason) => !/budget|rate/i.test(reason)),
+        fit_label: jobFit[job.id] || null
+      }))
+
+    res.json({
+      rate: {
+        desired_hourly: rate.effective_hourly,
+        agency_fee: rate.agency_fee,
+        bill_rate: rate.bill_rate
+      },
+      market: marketResponse(rate.bill_rate, jobs),
+      job_fit: jobFit,
+      recommendations
+    })
+  } catch (error) {
+    console.error('Nurse market read failed:', error.message)
+    res.status(500).json({ error: 'Failed to load market response' })
+  }
+})
+
+// GET /api/nurses/self/rate — the nurse's desired pay and the hospital bill
+// rate it produces.
 router.get('/self/rate', requireSessionUser, async (req, res) => {
   try {
     if (!isNurseUser(req)) {
@@ -549,8 +663,8 @@ router.get('/:id', requireAuth, requireRole('admin', 'employer'), async (req, re
 
   if (error) return res.status(404).json({ error: 'Nurse not found' })
 
-  // Attach the rate for the two roles allowed to see one. Employers get the
-  // bill rate only; admins additionally get the nurse rate and the markup.
+  // Attach the rate for the two roles allowed to see one: the public breakdown
+  // for employers, plus rate source and history fields for admins.
   try {
     const fullAccess = isAdmin || (await employerHasFullAccess(req.user.id))
     if (fullAccess) {

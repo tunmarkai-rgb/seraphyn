@@ -4,8 +4,8 @@ import Navbar from '../../components/Navbar'
 import { apiRequest } from '../../lib/api'
 import { formatHourly } from '../../lib/format'
 
-// The nurse sees only requests an admin has presented, and only their own
-// offered rate -- never the bill rate the facility pays, never the markup.
+// The nurse sees only requests an admin has presented, with the pay offered
+// to them for that assignment.
 function formatDate(value) {
   if (!value) return null
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

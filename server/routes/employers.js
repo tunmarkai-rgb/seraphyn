@@ -9,7 +9,7 @@ const { signEmployerContracts, sendSignedContractEmail } = require('../lib/contr
 const { claimLeadForAuthUser, hasClaimedLead } = require('../lib/leads')
 const { syncContactForUser } = require('../lib/ghl-sync')
 const { requireFullAccessEmployer } = require('../lib/employer-access')
-const { getBillingSettings, computeBillRate, resolveMarkupPct, loadRateRow } = require('../lib/rates')
+const { getBillingSettings, computeBillRate, resolveAgencyFee, loadRateRow } = require('../lib/rates')
 const {
   employerRequestShape,
   loadRequest,
@@ -77,15 +77,15 @@ router.post('/nurse-requests', requireAuth, requireRole('employer'), async (req,
       return res.status(404).json({ error: 'Nurse not found' })
     }
 
-    // Snapshot the bill rate the employer was shown, so a later rate change is
-    // detectable rather than silently re-pricing an open request.
+    // Snapshot the bill rate and fee the employer was shown, so a later rate or
+    // fee change is detectable rather than silently re-pricing an open request.
     let quotedBillRate = null
-    let markupSnapshot = null
+    let feeSnapshot = null
     try {
       const settings = await getBillingSettings()
       const rateRow = await loadRateRow(nurseId)
       quotedBillRate = computeBillRate(rateRow, settings)
-      markupSnapshot = resolveMarkupPct(rateRow, settings)
+      feeSnapshot = resolveAgencyFee(settings)
     } catch (rateError) {
       console.error('Could not snapshot bill rate for request:', rateError.message)
     }
@@ -105,7 +105,7 @@ router.post('/nurse-requests', requireAuth, requireRole('employer'), async (req,
         shift_type: body.shift_type || null,
         employer_note: String(body.employer_note || '').trim(),
         quoted_bill_rate: quotedBillRate,
-        markup_pct_snapshot: markupSnapshot,
+        agency_fee_snapshot: feeSnapshot,
         created_by: req.user.id
       })
       .select('*')

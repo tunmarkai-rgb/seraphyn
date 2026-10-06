@@ -20,9 +20,9 @@ const steps = [
 ]
 
 const FALLBACK_JOBS = [
-  { org: "St. Mary's Medical Center", location: 'Chicago, IL', title: 'Travel ICU Registered Nurse', specialty: 'Intensive Care Unit', shift: 'Night Shift', contract: '13 Weeks', pay: '$78', initials: 'SM', color: '#2C3E50' },
-  { org: 'Northwestern Health', location: 'Seattle, WA', title: 'Pediatric ER Nurse', specialty: 'Emergency Department', shift: 'Day Shift', contract: '26 Weeks', pay: '$85', initials: 'NH', color: '#7EB5C8' },
-  { org: 'Baystate Health System', location: 'Boston, MA', title: 'OR Circulator RN', specialty: 'Operating Room', shift: 'Mixed Shifts', contract: '13 Weeks', pay: '$92', initials: 'BH', color: '#C8A96E' },
+  { org: "St. Mary's Medical Center", location: 'Chicago, IL', title: 'Travel ICU Registered Nurse', specialty: 'Intensive Care Unit', shift: 'Night Shift', contract: '13 Weeks', initials: 'SM', color: '#2C3E50' },
+  { org: 'Northwestern Health', location: 'Seattle, WA', title: 'Pediatric ER Nurse', specialty: 'Emergency Department', shift: 'Day Shift', contract: '26 Weeks', initials: 'NH', color: '#7EB5C8' },
+  { org: 'Baystate Health System', location: 'Boston, MA', title: 'OR Circulator RN', specialty: 'Operating Room', shift: 'Mixed Shifts', contract: '13 Weeks', initials: 'BH', color: '#C8A96E' },
 ]
 
 const FALLBACK_NURSES = [
@@ -78,7 +78,7 @@ export default function HomePage() {
             specialty: job.specialty,
             shift: job.shift_type,
             contract: job.contract_length || 'Contract',
-            pay: job.pay_rate ? `$${job.pay_rate}` : 'Competitive',
+            urgency: job.urgency || 'standard',
             initials: (job.employer_profiles?.org_name || 'HC').slice(0, 2).toUpperCase(),
             color: BRAND_COLORS[i % 3],
           }))
@@ -291,9 +291,8 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '24px', fontWeight: '500', color: 'var(--deep-navy)' }}>
-                    {job.pay}
-                    <span style={{ fontSize: '12px', fontFamily: 'DM Sans, sans-serif', fontWeight: '300', color: 'var(--text-muted)' }}>/hr</span>
+                  <div style={{ fontSize: '12px', fontWeight: '600', letterSpacing: '0.04em', color: job.urgency && job.urgency !== 'standard' ? '#B43C3C' : 'var(--deep-navy)' }}>
+                    {job.urgency === 'critical' ? 'Critical need' : job.urgency === 'urgent' ? 'Urgent need' : 'You name your pay'}
                   </div>
                   <Link to="/jobs" style={{ padding: '8px 16px', border: '1px solid var(--sky-blue)', color: 'var(--sky-blue)', borderRadius: '999px', fontSize: '11px', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '700', textDecoration: 'none' }}>
                     View Role

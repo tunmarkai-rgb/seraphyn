@@ -6,6 +6,7 @@ import Navbar from '../../components/Navbar'
 import { NURSE_AVAILABILITY_OPTIONS, NURSE_SHIFT_PREFERENCES, SPECIALTIES, US_STATES } from '../../lib/constants'
 import { apiRequest } from '../../lib/api'
 import { formatHourly } from '../../lib/format'
+import { billRateFor, usePricing } from '../../lib/pricing'
 
 const CERTIFICATIONS = ['BLS','ACLS','PALS','TNCC','CCRN','CEN','CNOR','NRP','NIHSS','AWHONN']
 
@@ -23,6 +24,7 @@ function normalizeAvailability(value) {
 }
 
 export default function NurseProfile() {
+  const pricing = usePricing()
   const { user } = useAuth()
   const navigate = useNavigate()
   const resumeRef = useRef()
@@ -413,10 +415,10 @@ export default function NurseProfile() {
           {rateAvailable && (
           <section style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '4px', padding: '28px', marginBottom: '20px' }}>
             <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '20px', fontWeight: '500', color: 'var(--deep-navy)', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-              Your Rate
+              Your Desired Pay
             </h2>
 
-            <label style={labelStyle}>Desired Hourly Rate</label>
+            <label style={labelStyle}>Desired Pay (per hour)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '320px' }}>
               <div style={{ position: 'relative', flex: 1 }}>
                 <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '14px', pointerEvents: 'none' }}>$</span>
@@ -435,24 +437,43 @@ export default function NurseProfile() {
               <span style={{ fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>/ hour</span>
             </div>
 
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px', lineHeight: 1.6 }}>
-              This is your take-home rate for per diem and contract assignments.
-              Seraphyn bills facilities separately, so what a facility pays is not
-              what you are paid. Leave this blank if you would rather discuss it
-              with your coordinator.
+            {(() => {
+              const previewPay = rateInput.trim() !== '' ? Number(rateInput) : null
+              const previewBill = billRateFor(previewPay, pricing.agency_fee)
+              return (
+                <div style={{ marginTop: '14px', padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', maxWidth: '420px' }}>
+                  <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                    Your potential hospital bill rate
+                  </p>
+                  <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '24px', fontWeight: '500', color: 'var(--deep-navy)' }}>
+                    {formatHourly(previewBill, { empty: '—' })}
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    {previewBill
+                      ? `${formatHourly(previewPay)} your pay + ${formatHourly(pricing.agency_fee)} Seraphyn fee`
+                      : `Your desired pay + ${formatHourly(pricing.agency_fee)} Seraphyn fee`}
+                  </p>
+                </div>
+              )
+            })()}
+
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '12px', lineHeight: 1.6 }}>
+              You choose your desired pay. Hospitals choose the opportunities that fit
+              their needs and budgets. This is what you are paid for per diem and contract
+              assignments; hospitals see it alongside the Seraphyn fee.
             </p>
 
             {!rate?.effective_hourly && (
               <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(201,169,110,0.12)', border: '1px solid var(--warm-gold)', borderRadius: '2px', fontSize: '12px', color: 'var(--deep-navy)', lineHeight: 1.6 }}>
-                You have not set a rate yet. Facilities see &ldquo;Rate on request&rdquo; until you do &mdash;
-                setting one gets you into rate-filtered searches.
+                You have not set your desired pay yet. Hospitals see &ldquo;Rate on request&rdquo; until
+                you do, and you won&rsquo;t show up when they compare nurses against their budget.
               </div>
             )}
 
             {rate?.is_admin_overridden && (
               <div style={{ marginTop: '14px', padding: '12px 14px', background: 'rgba(74,144,164,0.12)', border: '1px solid var(--sky-blue)', borderRadius: '2px', fontSize: '12px', color: 'var(--deep-navy)', lineHeight: 1.6 }}>
                 Seraphyn is currently placing you at {formatHourly(rate.effective_hourly)}.
-                {rate.desired_hourly != null && ` Your requested rate of ${formatHourly(rate.desired_hourly)} is on file.`}
+                {rate.desired_hourly != null && ` Your desired pay of ${formatHourly(rate.desired_hourly)} is on file.`}
                 {' '}Contact your coordinator to discuss.
               </div>
             )}
@@ -470,10 +491,10 @@ export default function NurseProfile() {
                 disabled={rateSaving}
                 style={{ padding: '10px 22px', background: 'var(--deep-navy)', color: 'white', border: 'none', borderRadius: '2px', fontSize: '12px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '500', cursor: rateSaving ? 'not-allowed' : 'pointer', opacity: rateSaving ? 0.6 : 1 }}
               >
-                {rateSaving ? 'Saving...' : 'Save Rate'}
+                {rateSaving ? 'Saving...' : 'Save Desired Pay'}
               </button>
               {rateSaved && (
-                <span style={{ fontSize: '12px', color: 'var(--success)' }}>&#10003; Rate saved.</span>
+                <span style={{ fontSize: '12px', color: 'var(--success)' }}>&#10003; Desired pay saved.</span>
               )}
             </div>
           </section>

@@ -40,7 +40,7 @@ export default function NurseApplications() {
         .select(`
           *,
           jobs (
-            title, city, state, specialty, pay_rate, shift_type,
+            title, city, state, specialty, shift_type,
             contract_length, description, employer_profiles(org_name)
           )
         `)
@@ -134,7 +134,7 @@ export default function NurseApplications() {
                   </div>
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                    {[job?.specialty, job?.shift_type, job?.contract_length, job?.pay_rate ? `$${job.pay_rate}/hr` : null].filter(Boolean).map((tag, i) => (
+                    {[job?.specialty, job?.shift_type, job?.contract_length].filter(Boolean).map((tag, i) => (
                       <span key={i} style={{ fontSize: '11px', padding: '3px 8px', background: 'rgba(126,181,200,0.1)', borderRadius: '2px', color: 'var(--sky-blue)', fontWeight: '500' }}>{tag}</span>
                     ))}
                   </div>

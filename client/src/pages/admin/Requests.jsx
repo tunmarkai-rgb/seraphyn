@@ -189,10 +189,10 @@ export default function AdminRequests() {
                   </p>
                 )}
 
-                {/* Rate block: admin-only. Nurse pay, markup and bill rate together. */}
+                {/* Rate block: nurse offer, fee at quote and quoted bill rate. */}
                 <div style={{ padding: '16px', background: 'var(--warm-white)', border: '1px solid var(--border)', borderRadius: '2px', marginBottom: '14px' }}>
                   <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--warm-gold)', fontWeight: '600', marginBottom: '14px' }}>
-                    Rate &middot; Admin Only
+                    Rate
                   </p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '14px' }}>
                     <div>
@@ -204,8 +204,8 @@ export default function AdminRequests() {
                       />
                     </div>
                     <div>
-                      <p style={cellLabel}>Markup At Quote</p>
-                      <p style={cellValue}>{request.markup_pct_snapshot != null ? `${request.markup_pct_snapshot}%` : '—'}</p>
+                      <p style={cellLabel}>Fee At Quote</p>
+                      <p style={cellValue}>{formatHourly(request.agency_fee_snapshot, { empty: '—' })}</p>
                     </div>
                     <div>
                       <p style={cellLabel}>Quoted Bill Rate</p>

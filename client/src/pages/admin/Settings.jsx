@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react'
 import { apiRequest } from '../../lib/api'
 import AdminLayout from '../../components/AdminLayout'
 import { formatHourly } from '../../lib/format'
+import { resetPricing } from '../../lib/pricing'
 
-// CONFIDENTIAL. The markup set here decides Seraphyn's margin on every per diem
-// and contract placement. It is never shown to employers or nurses.
+// The Seraphyn agency fee: a flat dollar amount added to every nurse's desired
+// pay to give the hospital bill rate. It is published -- hospitals and nurses
+// both see it -- so a change here shows up on every profile and in the
+// directory immediately. Open quotes and booked shifts keep the fee they were
+// made with.
 export default function AdminSettings() {
   const [form, setForm] = useState({
-    markup_pct: '', rounding_increment: '', min_nurse_rate: '', max_nurse_rate: '', note: ''
+    agency_fee: '', min_nurse_rate: '', max_nurse_rate: '', note: ''
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -24,8 +28,7 @@ export default function AdminSettings() {
     try {
       const data = await apiRequest('/api/admin/settings/per-diem-billing')
       setForm({
-        markup_pct: String(data.markup_pct ?? ''),
-        rounding_increment: String(data.rounding_increment ?? ''),
+        agency_fee: String(data.agency_fee ?? ''),
         min_nurse_rate: String(data.min_nurse_rate ?? ''),
         max_nurse_rate: String(data.max_nurse_rate ?? ''),
         note: ''
@@ -46,13 +49,13 @@ export default function AdminSettings() {
       await apiRequest('/api/admin/settings/per-diem-billing', {
         method: 'PUT',
         body: {
-          markup_pct: Number(form.markup_pct),
-          rounding_increment: Number(form.rounding_increment),
+          agency_fee: Number(form.agency_fee),
           min_nurse_rate: Number(form.min_nurse_rate),
           max_nurse_rate: Number(form.max_nurse_rate),
           note: form.note
         }
       })
+      resetPricing()
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -66,13 +69,10 @@ export default function AdminSettings() {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
-  // Worked example, so a mistyped margin is obvious before saving.
-  const markup = Number(form.markup_pct)
-  const increment = Number(form.rounding_increment) || 0.5
-  const sample = 60
-  const preview = Number.isFinite(markup) && markup > 0
-    ? Math.ceil((sample * (1 + markup / 100)) / increment) * increment
-    : null
+  // Worked example, so a mistyped fee is obvious before saving.
+  const fee = Number(form.agency_fee)
+  const sample = 65
+  const preview = Number.isFinite(fee) && fee > 0 ? sample + fee : null
 
   const inputStyle = {
     width: '100%', padding: '10px 12px', background: 'var(--warm-white)',
@@ -100,10 +100,11 @@ export default function AdminSettings() {
               Per Diem Billing
             </h2>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid var(--border)', lineHeight: 1.6 }}>
-              The agency markup added to a nurse&rsquo;s rate to produce the bill rate an
-              employer sees. Applies to per diem and contract hourly work only &mdash;
-              direct hire uses the placement fee in the signed agreement. Changes take
-              effect immediately across the portal.
+              The Seraphyn agency fee added to every nurse&rsquo;s desired pay to give
+              the hospital bill rate. It is shown openly to hospitals and nurses. Applies
+              to per diem and contract hourly work only &mdash; direct hire uses the
+              placement fee in the signed agreement. Changes take effect immediately;
+              open quotes and booked shifts keep the fee they were made with.
             </p>
 
             {loading ? (
@@ -111,13 +112,9 @@ export default function AdminSettings() {
             ) : (
               <>
                 <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Agency Markup (%)</label>
-                    <input name="markup_pct" type="number" min="0.01" max="500" step="0.5" value={form.markup_pct} onChange={handle} style={inputStyle} required />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Round Up To ($)</label>
-                    <input name="rounding_increment" type="number" min="0.01" step="0.25" value={form.rounding_increment} onChange={handle} style={inputStyle} required />
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={labelStyle}>Seraphyn Agency Fee ($/hr)</label>
+                    <input name="agency_fee" type="number" min="0.01" max="500" step="0.5" value={form.agency_fee} onChange={handle} style={{ ...inputStyle, maxWidth: '200px' }} required />
                   </div>
                   <div>
                     <label style={labelStyle}>Minimum Nurse Rate ($/hr)</label>
@@ -133,8 +130,8 @@ export default function AdminSettings() {
                   <p style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: '6px' }}>Worked Example</p>
                   <p style={{ fontSize: '14px', color: 'var(--deep-navy)' }}>
                     {preview
-                      ? `A ${formatHourly(sample)} nurse bills at ${formatHourly(preview)} — a margin of ${formatHourly(preview - sample)}.`
-                      : 'Enter a markup to preview the effect.'}
+                      ? `A nurse asking ${formatHourly(sample)} is shown to hospitals at ${formatHourly(preview)} (${formatHourly(sample)} pay + ${formatHourly(fee)} Seraphyn fee).`
+                      : 'Enter a fee to preview the effect.'}
                   </p>
                 </div>
 
